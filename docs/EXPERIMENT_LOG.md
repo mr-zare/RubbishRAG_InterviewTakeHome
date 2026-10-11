@@ -259,3 +259,110 @@ v17 analysis:
 
 Decision:
 FREEZE Core v1.4 and isolate the remaining issue to P8 reranking specificity.
+
+---
+
+## Core v1.5 Attempt A — Invalid / Aborted Experiment
+
+The first attempt to add an exact FAQ-question specificity feature did not
+modify the reranker.
+
+Observed:
+- The patch script terminated with:
+  `ERROR: score_record lexical block not found`.
+- The regression test was added afterwards.
+- The new test failed because `question_exact_match` was absent from the
+  scorer output.
+- Local retrieval remained unchanged:
+  - doc 173 rank 1
+  - doc 237 rank 2
+- The subsequent benchmark still reported 95% accuracy.
+
+Important:
+The benchmark produced after the failed patch is NOT a valid Core v1.5
+measurement and must not be used to attribute latency or accuracy changes to
+the proposed feature.
+
+Engineering lesson:
+A patch application success must be verified before running downstream
+benchmarks. Regression tests correctly exposed that the intended code path had
+not changed.
+
+Decision:
+REJECT / INVALID EXPERIMENT.
+Retry the same hypothesis using a structurally robust patch.
+
+---
+
+## Core v1.5 Attempt A — Invalid / Aborted Experiment
+
+The first attempt to add an exact FAQ-question specificity feature did not
+modify the reranker.
+
+Observed:
+- The patch script terminated with:
+  `ERROR: score_record lexical block not found`.
+- The regression test was added afterwards.
+- The new test failed because `question_exact_match` was absent from the
+  scorer output.
+- Local retrieval remained unchanged:
+  - doc 173 rank 1
+  - doc 237 rank 2
+- The subsequent benchmark still reported 95% accuracy.
+
+Important:
+The benchmark produced after the failed patch is NOT a valid Core v1.5
+measurement and must not be used to attribute latency or accuracy changes to
+the proposed feature.
+
+Engineering lesson:
+A patch application success must be verified before running downstream
+benchmarks. Regression tests correctly exposed that the intended code path had
+not changed.
+
+Decision:
+REJECT / INVALID EXPERIMENT.
+Retry the same hypothesis using a structurally robust patch.
+
+---
+
+## Core v1.5 — FAQ Question Specificity Anchor
+
+Hypothesis:
+Typed semantic compatibility can identify a relevant FAQ family but may still
+prefer a less specific source. Human-written FAQ question identity provides a
+high-precision source-specificity signal.
+
+Change:
+- Added a normalized exact FAQ-question match feature to the semantic reranker.
+- Exact match is content-based and independent of benchmark IDs.
+- Added a regression test for the feature.
+
+Validation:
+- Tests: 52/52 passed.
+- Visible benchmark: 20/20 = 100%.
+- Mean latency: 63.1 ms.
+- P50 latency: 46.1 ms.
+- P95 latency: 98.8 ms.
+
+Recovered case:
+- Tax-debt removal query:
+  - doc 237 moved from local rank 2 to rank 1.
+  - exact-question contribution: +3.0.
+  - final citation changed from doc 173 to doc 237.
+
+Important diagnostic finding:
+Although query and FAQ question were identical, doc 237 received a polarity
+score of -3.0 (POLARITY_CONFLICT). The exact-question signal compensated for
+this error.
+
+Interpretation:
+The remaining polarity representation is unsafe for use as a hard P10 gate.
+Document polarity currently mixes FAQ question semantics with answer semantics;
+an answer may legitimately negate or resolve the proposition asked by the
+question.
+
+Decision:
+FREEZE visible-ranking behavior at Core v1.5.
+Do not optimize further against the visible benchmark.
+Next priority: polarity robustness before hard sufficiency enforcement.

@@ -87,3 +87,50 @@ def test_evidence_stops_after_complete_primary():
 
     assert res["status"] == "answer"
     assert res["cites"] == [101]
+
+
+def test_exact_faq_question_gets_specificity_bonus():
+    from rubbish_rag.corpus import CorpusRecord
+    from rubbish_rag.rerank import score_record
+    from rubbish_rag.slots import parse_query
+
+    query = "اگر بدهی مالیاتی را پرداخت کنم چه اتفاقی می افتد؟"
+    frame = parse_query(query)
+
+    exact = CorpusRecord(
+        source_doc_id=90001,
+        question=query,
+        category="test",
+        brief_answer="پاسخ تست",
+        answer="پاسخ تست",
+        keyword="بدهی مالیاتی",
+        source_row_hash="exact",
+    )
+
+    related = CorpusRecord(
+        source_doc_id=90002,
+        question="بدهی مالیاتی چه تاثیری بر امتیاز دارد؟",
+        category="test",
+        brief_answer="پاسخ تست",
+        answer="پاسخ تست",
+        keyword="بدهی مالیاتی",
+        source_row_hash="related",
+    )
+
+    exact_score, exact_parts = score_record(
+        query,
+        frame,
+        exact,
+        registry=None,
+    )
+
+    related_score, related_parts = score_record(
+        query,
+        frame,
+        related,
+        registry=None,
+    )
+
+    assert exact_parts["question_exact_match"] == 3.0
+    assert related_parts["question_exact_match"] == 0.0
+    assert exact_score > related_score

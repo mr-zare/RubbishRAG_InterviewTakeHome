@@ -138,6 +138,28 @@ def score_record(query: str, qf: QuerySemanticFrame, record: CorpusRecord, *, pr
     score += lexical
     contributions["lexical"] = round(lexical, 4)
 
+    # FAQ-question specificity anchor.
+    #
+    # Typed semantic compatibility is necessary but does not always identify
+    # the most specific source. A normalized exact match against the
+    # human-written FAQ question is therefore treated as strong source
+    # evidence. This is content-based and independent of benchmark IDs.
+    normalized_query = normalize_match_text(query)
+    normalized_question = normalize_match_text(record.question)
+
+    exact_question_bonus = 0.0
+
+    if (
+        normalized_query
+        and normalized_question
+        and normalized_query == normalized_question
+    ):
+        exact_question_bonus = 3.0
+        score += exact_question_bonus
+
+    contributions["question_exact_match"] = exact_question_bonus
+
+
     if qf.intent is not Intent.GENERAL_INFO:
         if df.intent is qf.intent:
             score += 1.6
