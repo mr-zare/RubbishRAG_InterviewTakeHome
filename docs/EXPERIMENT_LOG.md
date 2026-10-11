@@ -140,3 +140,122 @@ Decision:
 FREEZE.
 Accuracy is preserved and CPU p95 is below the 100 ms target.
 
+
+---
+
+## Core v1.3 — Remaining Failure Analysis
+
+Visible failures:
+- v6
+- v17
+- v18
+
+### Diagnostic tooling issue
+
+The first failure-analysis script paired benchmark cases with trace rows by
+position in an append-only trace file. Because the trace contained prior probe
+runs, this produced incorrect case/trace associations.
+
+The diagnostic was corrected to match traces by exact query text.
+
+Lesson:
+Observability tooling itself must have stable identifiers; positional alignment
+is unsafe for append-only traces.
+
+### v6 — Missing explanatory intent
+
+Query:
+"شرکت سودآوره ولی امتیاز نداره چرا؟"
+
+Observed:
+The query parser classified the query as GENERAL_INFO. As a result, the
+requirement model did not encode the "why is my score missing/low?" information
+need. A company-related but semantically wrong remote result was therefore
+considered sufficient.
+
+Root cause:
+EXPLAIN_SCORE detection required an explicit numeric credit score.
+
+Required fix:
+Support causal score/rank questions without requiring a numeric score.
+
+### v17 — Semantic coverage was not enough for source specificity
+
+Query:
+A paid tax-debt / E3 removal question.
+
+Observed:
+Remote doc 173 covered TAX_DEBT + E3 + DEBT_REMOVAL and produced a semantically
+reasonable answer, but the benchmark expected the more specific FAQ doc 237.
+
+Root cause:
+The verified-backfill trigger considered typed semantic slots sufficient and
+did not consider question-level lexical specificity.
+
+Required fix:
+A remote candidate must satisfy both critical semantic constraints and a
+minimum human-FAQ-question coverage before suppressing local recall recovery.
+
+This is a source-selection precision problem, not an answer hallucination.
+
+### v18 — Missing explanatory intent
+
+Query:
+"چرا وقتی شرکت هیچ سابقه تاخیری ندارد، بالاترین امتیاز رو نداره؟"
+
+Observed:
+The parser again produced a frame too generic to represent the causal
+score-explanation requirement. A tax-related document was selected.
+
+Root cause:
+Same non-numeric EXPLAIN_SCORE gap as v6.
+
+Decision:
+Implement Core v1.4 with:
+1. non-numeric causal score/rank intent detection;
+2. question-specificity-aware verified backfill triggering.
+
+
+---
+
+## Core v1.4 — Semantic Completeness and Causal Intent
+
+Hypothesis:
+Two remaining failures were caused by incomplete query semantics, while another
+was caused by treating typed-slot compatibility as sufficient source
+specificity.
+
+Changes:
+- Extended EXPLAIN_SCORE to causal non-numeric score/rank questions.
+- Added question-level specificity to the verified-backfill completeness test.
+- Preserved DEBT_REMOVAL precedence for tax-debt payment questions.
+
+Validation:
+- Tests: 51/51 passed.
+- Visible benchmark: 19/20 = 95%.
+- Mean latency: 48.9 ms.
+- P50 latency: 41.4 ms.
+- P95 latency: 74.9 ms.
+
+Delta vs Core v1.3:
+- Accuracy: 85% -> 95%.
+- Mean latency: 44.9 ms -> 48.9 ms.
+- P95 latency: 73.0 ms -> 74.9 ms.
+
+Recovered cases:
+- v6: non-numeric company score explanation -> doc 86.
+- v18: missing highest-score explanation -> doc 67.
+
+Remaining failure:
+- v17.
+
+v17 analysis:
+- Intent is correctly DEBT_REMOVAL.
+- TAX debt and E3 slots are correctly extracted.
+- Expected doc 237 is present in verified local retrieval at rank 2.
+- Similar remote doc 173 remains ranked above it.
+- This is now a reranking/source-specificity problem rather than a recall or
+  query-understanding problem.
+
+Decision:
+FREEZE Core v1.4 and isolate the remaining issue to P8 reranking specificity.

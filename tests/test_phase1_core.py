@@ -109,3 +109,29 @@ def test_supplier_debt_is_specific_not_ambiguous():
         "debt_type"
         not in frame.ambiguity.missing_required_slots
     )
+
+
+def test_non_numeric_missing_score_is_explain_score():
+    frame = parse_query(
+        "شرکت سودآوره ولی امتیاز نداره چرا؟"
+    )
+
+    assert frame.intent is Intent.EXPLAIN_SCORE
+
+
+def test_non_numeric_max_score_question_is_explain_score():
+    frame = parse_query(
+        "چرا وقتی شرکت هیچ سابقه تاخیری ندارد، "
+        "بالاترین امتیاز رو نداره؟"
+    )
+
+    assert frame.intent is Intent.EXPLAIN_SCORE
+
+
+def test_tax_payment_e3_remains_debt_removal():
+    frame = parse_query(
+        "من بدهی مالیاتی پرداخت نشده داشتم و رتبه ام E3 شده است. "
+        "اگر آن را پرداخت کنم، چه اتفاقی می افتد؟"
+    )
+
+    assert frame.intent is Intent.DEBT_REMOVAL

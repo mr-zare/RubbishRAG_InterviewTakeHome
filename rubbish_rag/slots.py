@@ -305,6 +305,18 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
     # ambiguity gate can ask for the missing subtype instead of guessing.
     if "بدهی" in text and not debts:
         return Intent.DEBT_EFFECT
+
+    # A score-explanation question does not need to contain a literal numeric
+    # score. Examples include "چرا امتیاز ندارم؟" or "چرا بالاترین رتبه را
+    # ندارم؟". Keep explicit factor/effect questions out of this branch.
+    causal_score_question = (
+        any(term in text for term in ("امتیاز", "رتبه", "نمره"))
+        and any(cue in text for cue in ("چرا", "علت", "دلیل"))
+        and not any(cue in text for cue in _EFFECT_CUES)
+    )
+    if causal_score_question:
+        return Intent.EXPLAIN_SCORE
+
     if any(w in text for w in ("وام", "تسهیلات")) and any(w in text for w in ("می دهد", "میده", "بگیر", "گرفتن", "شرایط", "دریافت")):
         return Intent.LOAN_ELIGIBILITY
     if any(w in text for w in ("گزارش", "ثبت می شود", "ثبت میشود", "در سابقه")):

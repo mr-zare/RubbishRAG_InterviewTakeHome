@@ -13,6 +13,8 @@ from .normalize_fa import normalize_match_text
 from .slots import parse_query
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_\u0600-\u06ff]+")
+_MIN_REMOTE_QUESTION_COVERAGE = 0.30
+
 _STOPWORDS = {
     "از", "به", "در", "با", "برای", "که", "و", "یا", "را", "من", "ما", "این", "آن", "یک",
     "آیا", "اگر", "چه", "چی", "چرا", "است", "هست", "شود", "می", "رو", "روی", "بر",
@@ -603,6 +605,7 @@ def local_verified_search(
 
 
 def _candidate_satisfies_query_frame(
+    query: str,
     qf: QuerySemanticFrame,
     record: CorpusRecord,
     registry: TrustedCorpusRegistry,
@@ -649,10 +652,34 @@ def _candidate_satisfies_query_frame(
     if polarity_score < 0:
         return False
 
+    # Typed slots describe constraints but do not fully describe the user's
+    # information need. Require a modest level of overlap with the human FAQ
+    # question before treating the remote pool as complete.
+    _build_token_df(registry)
+
+    query_tokens = set(_tokens(query))
+
+    question_coverage = _weighted_coverage_sets(
+        query_tokens,
+        registry.question_tokens.get(
+            record.source_doc_id,
+            frozenset(),
+        ),
+        registry,
+    )
+
+    if (
+        query_tokens
+        and question_coverage
+        < _MIN_REMOTE_QUESTION_COVERAGE
+    ):
+        return False
+
     return True
 
 
 def _needs_verified_backfill(
+    query: str,
     qf: QuerySemanticFrame,
     candidates: dict[int, dict[str, Any]],
     registry: TrustedCorpusRegistry,
@@ -680,6 +707,7 @@ def _needs_verified_backfill(
             continue
 
         if _candidate_satisfies_query_frame(
+            query,
             qf,
             record,
             registry,
@@ -727,6 +755,7 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
         and registry.records
         and had_real_remote
         and _needs_verified_backfill(
+            query,
             qf,
             candidates,
             registry,
