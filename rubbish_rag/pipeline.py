@@ -41,7 +41,7 @@ def retrieve(query, topk=5):
 
 @R.reranker
 def rerank(query, hits):
-    return semantic_rerank(query, hits, enable_local_backfill=False)
+    return semantic_rerank(query, hits, enable_local_backfill=True)
 
 
 @R.resolver

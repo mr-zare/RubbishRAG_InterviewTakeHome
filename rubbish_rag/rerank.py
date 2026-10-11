@@ -245,6 +245,93 @@ def local_verified_search(query: str, qf: QuerySemanticFrame, registry: TrustedC
     return results
 
 
+def _candidate_satisfies_query_frame(
+    qf: QuerySemanticFrame,
+    record: CorpusRecord,
+    registry: TrustedCorpusRegistry,
+) -> bool:
+    """Whether one trusted candidate covers the critical query frame.
+
+    This is intentionally stricter than lexical relevance. It is only used to
+    decide whether the remote top-k needs a verified local recall backfill.
+    """
+    df = _document_frame(record, registry)
+
+    if (
+        qf.intent is not Intent.GENERAL_INFO
+        and df.intent is not qf.intent
+    ):
+        return False
+
+    for entity_type in (
+        EntityType.BANK,
+        EntityType.RANK,
+        EntityType.PERSONA,
+        EntityType.DEBT,
+    ):
+        query_values = set(qf.values(entity_type))
+        if not query_values:
+            continue
+
+        document_values = set(df.values(entity_type))
+        if not query_values.issubset(document_values):
+            return False
+
+    typed_quantities = [
+        q
+        for q in qf.quantities
+        if q.quantity_type is not QuantityType.GENERIC_NUMBER
+    ]
+
+    if typed_quantities:
+        quantity_score, _ = _quantity_compat(qf, df)
+        if quantity_score <= 0:
+            return False
+
+    polarity_score, _ = _polarity_compat(qf, df)
+    if polarity_score < 0:
+        return False
+
+    return True
+
+
+def _needs_verified_backfill(
+    qf: QuerySemanticFrame,
+    candidates: dict[int, dict[str, Any]],
+    registry: TrustedCorpusRegistry,
+) -> bool:
+    """Backfill only when no trusted remote candidate fully covers the query."""
+
+    remote_verified = [
+        hit
+        for hit in candidates.values()
+        if hit.get("candidate_source") == "remote_verified"
+    ]
+
+    # A real remote call may have yielded only untrusted/poison candidates.
+    if not remote_verified:
+        return True
+
+    for hit in remote_verified:
+        try:
+            doc_id = int(hit.get("doc_id", -1))
+        except (TypeError, ValueError):
+            continue
+
+        record = registry.get(doc_id)
+        if record is None:
+            continue
+
+        if _candidate_satisfies_query_frame(
+            qf,
+            record,
+            registry,
+        ):
+            return False
+
+    return True
+
+
 def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_backfill: bool = False) -> list[dict[str, Any]]:
     qf = parse_query(query)
     registry = get_registry()
@@ -273,14 +360,44 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
     # The official bench bypasses the registered @retriever and fixes remote k=5.
     # P0 showed candidate recall failures, so a small verified-corpus backfill is
     # used as a compatibility bridge when the trusted corpus is available.
-    if enable_local_backfill and registry.records:
-        for local in local_verified_search(query, qf, registry, limit=5):
+    had_real_remote = any(
+        "bm25" in hit or "dense" in hit
+        for hit in fused
+    )
+
+    should_backfill = (
+        enable_local_backfill
+        and registry.records
+        and had_real_remote
+        and _needs_verified_backfill(
+            qf,
+            candidates,
+            registry,
+        )
+    )
+
+    if should_backfill:
+        for local in local_verified_search(
+            query,
+            qf,
+            registry,
+            limit=5,
+        ):
+            local["backfill_trigger"] = (
+                "MISSING_COMPLETE_REMOTE_SUPPORT"
+            )
+
             doc_id = int(local["doc_id"])
+
             if doc_id not in candidates:
                 candidates[doc_id] = local
             else:
-                candidates[doc_id]["local_retrieval_score"] = local["local_retrieval_score"]
-                candidates[doc_id]["local_rank"] = local["local_rank"]
+                candidates[doc_id][
+                    "local_retrieval_score"
+                ] = local["local_retrieval_score"]
+                candidates[doc_id][
+                    "local_rank"
+                ] = local["local_rank"]
 
     rescored: list[dict[str, Any]] = []
     remote_rank_by_doc = {int(h["doc_id"]): int(h.get("rrf_rank", i + 1)) for i, h in enumerate(fused)}
