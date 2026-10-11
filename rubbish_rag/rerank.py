@@ -190,58 +190,415 @@ def _build_token_df(registry: TrustedCorpusRegistry) -> None:
 
 
 
+
+# ---------------------------------------------------------------------------
+# Fast local candidate generation.
+#
+# These indexes are query-independent and are built once by prepare_reranker()
+# before the stock benchmark starts timing individual queries.
+# ---------------------------------------------------------------------------
+
+_LOCAL_INDEX_CORPUS_HASH = ""
+_LOCAL_TOKEN_POSTINGS: dict[str, set[int]] = {}
+_LOCAL_INTENT_POSTINGS: dict[Intent, set[int]] = {}
+_LOCAL_ENTITY_POSTINGS: dict[tuple[EntityType, str], set[int]] = {}
+_LOCAL_QUANTITY_POSTINGS: dict[
+    tuple[QuantityType, float | int, str],
+    set[int],
+] = {}
+
+
+def _quantity_posting_key(quantity):
+    if quantity.value is None:
+        return None
+
+    return (
+        quantity.quantity_type,
+        quantity.value,
+        quantity.unit or "",
+    )
+
+
+def _build_local_candidate_indexes(
+    registry: TrustedCorpusRegistry,
+) -> None:
+    global _LOCAL_INDEX_CORPUS_HASH
+
+    if (
+        _LOCAL_INDEX_CORPUS_HASH == registry.corpus_hash
+        and _LOCAL_TOKEN_POSTINGS
+    ):
+        return
+
+    _LOCAL_TOKEN_POSTINGS.clear()
+    _LOCAL_INTENT_POSTINGS.clear()
+    _LOCAL_ENTITY_POSTINGS.clear()
+    _LOCAL_QUANTITY_POSTINGS.clear()
+
+    _build_token_df(registry)
+
+    for doc_id, record in registry.records.items():
+        frame = _document_frame(record, registry)
+
+        for token in registry.tokens_by_doc.get(
+            doc_id,
+            frozenset(),
+        ):
+            _LOCAL_TOKEN_POSTINGS.setdefault(
+                token,
+                set(),
+            ).add(doc_id)
+
+        _LOCAL_INTENT_POSTINGS.setdefault(
+            frame.intent,
+            set(),
+        ).add(doc_id)
+
+        for entity_type in (
+            EntityType.BANK,
+            EntityType.RANK,
+            EntityType.PERSONA,
+            EntityType.DEBT,
+        ):
+            for value in frame.values(entity_type):
+                _LOCAL_ENTITY_POSTINGS.setdefault(
+                    (entity_type, value),
+                    set(),
+                ).add(doc_id)
+
+        for quantity in frame.quantities:
+            key = _quantity_posting_key(quantity)
+            if key is not None:
+                _LOCAL_QUANTITY_POSTINGS.setdefault(
+                    key,
+                    set(),
+                ).add(doc_id)
+
+    _LOCAL_INDEX_CORPUS_HASH = registry.corpus_hash
+
+
+def _cheap_local_shortlist(
+    query: str,
+    qf: QuerySemanticFrame,
+    registry: TrustedCorpusRegistry,
+    *,
+    limit: int = 96,
+) -> list[int]:
+    """Generate a high-recall shortlist without running full score_record.
+
+    Candidate union:
+      - rare lexical query terms,
+      - compatible intent,
+      - explicit structured slots,
+      - exact typed quantities.
+
+    The final ranking still uses the original semantic score_record().
+    """
+
+    _build_local_candidate_indexes(registry)
+
+    qtokens = set(_tokens(query))
+    n_docs = max(len(registry.records), 1)
+
+    candidate_ids: set[int] = set()
+
+    # Use the most discriminative query terms first. Very common tokens such
+    # as "امتیاز" should not expand the shortlist to the whole corpus.
+    ranked_tokens = sorted(
+        qtokens,
+        key=lambda token: (
+            registry.token_df.get(token, n_docs + 1),
+            token,
+        ),
+    )
+
+    lexical_terms = [
+        token
+        for token in ranked_tokens
+        if registry.token_df.get(token, n_docs)
+        <= max(80, int(0.40 * n_docs))
+    ][:8]
+
+    # If every term is common, keep a few anyway rather than losing the
+    # lexical path altogether.
+    if not lexical_terms:
+        lexical_terms = ranked_tokens[:5]
+
+    for token in lexical_terms:
+        candidate_ids.update(
+            _LOCAL_TOKEN_POSTINGS.get(
+                token,
+                (),
+            )
+        )
+
+    # Intent is useful for paraphrases with weak literal overlap.
+    if qf.intent is not Intent.GENERAL_INFO:
+        candidate_ids.update(
+            _LOCAL_INTENT_POSTINGS.get(
+                qf.intent,
+                (),
+            )
+        )
+
+    # Explicit slots are high-value recall anchors.
+    for entity_type in (
+        EntityType.BANK,
+        EntityType.RANK,
+        EntityType.PERSONA,
+        EntityType.DEBT,
+    ):
+        for value in qf.values(entity_type):
+            candidate_ids.update(
+                _LOCAL_ENTITY_POSTINGS.get(
+                    (entity_type, value),
+                    (),
+                )
+            )
+
+    for quantity in qf.quantities:
+        key = _quantity_posting_key(quantity)
+        if key is not None:
+            candidate_ids.update(
+                _LOCAL_QUANTITY_POSTINGS.get(
+                    key,
+                    (),
+                )
+            )
+
+    if not candidate_ids:
+        candidate_ids.update(registry.records)
+
+    # Cheap ranking only. No parsing and no full semantic scoring here:
+    # all document frames/tokens were precomputed at startup.
+    cheap: list[tuple[float, int]] = []
+
+    for doc_id in candidate_ids:
+        q_cov = _weighted_coverage_sets(
+            qtokens,
+            registry.question_tokens.get(
+                doc_id,
+                frozenset(),
+            ),
+            registry,
+        )
+
+        all_cov = _weighted_coverage_sets(
+            qtokens,
+            registry.tokens_by_doc.get(
+                doc_id,
+                frozenset(),
+            ),
+            registry,
+        )
+
+        df = registry.document_frames.get(doc_id)
+
+        score = 3.0 * q_cov + 0.8 * all_cov
+
+        if (
+            df is not None
+            and qf.intent is not Intent.GENERAL_INFO
+            and df.intent is qf.intent
+        ):
+            score += 1.0
+
+        if df is not None:
+            for entity_type in (
+                EntityType.BANK,
+                EntityType.RANK,
+                EntityType.PERSONA,
+                EntityType.DEBT,
+            ):
+                qvals = set(qf.values(entity_type))
+
+                if (
+                    qvals
+                    and qvals
+                    & set(df.values(entity_type))
+                ):
+                    score += 1.25
+
+            quantity_score, _ = _quantity_compat(
+                qf,
+                df,
+            )
+
+            # This stage only wants recall. Do not let a cheap prefilter apply
+            # large negative semantic penalties.
+            if quantity_score > 0:
+                score += min(
+                    quantity_score,
+                    2.0,
+                )
+
+        cheap.append(
+            (
+                score,
+                doc_id,
+            )
+        )
+
+    cheap.sort(
+        key=lambda item: (
+            -item[0],
+            item[1],
+        )
+    )
+
+    return [
+        doc_id
+        for _, doc_id in cheap[:limit]
+    ]
+
+
 def prepare_reranker() -> None:
-    """Warm trusted-corpus lexical and semantic caches outside query timing."""
+    """Warm trusted-corpus indexes outside per-query timing."""
     registry = get_registry()
+
     if not registry.records:
         return
+
     _build_token_df(registry)
+
     for record in registry.records.values():
-        _document_frame(record, registry)
+        _document_frame(
+            record,
+            registry,
+        )
+
+    _build_local_candidate_indexes(
+        registry,
+    )
 
 
-def local_verified_search(query: str, qf: QuerySemanticFrame, registry: TrustedCorpusRegistry, *, limit: int = 5) -> list[dict[str, Any]]:
-    """Small-corpus verified recall backfill.
+def local_verified_search(
+    query: str,
+    qf: QuerySemanticFrame,
+    registry: TrustedCorpusRegistry,
+    *,
+    limit: int = 5,
+    shortlist_limit: int = 96,
+) -> list[dict[str, Any]]:
+    """Two-stage verified recall backfill.
 
-    This never uses benchmark labels. It scores the 330 trusted FAQ rows using
-    human-written questions + typed semantic compatibility. It is a fallback to
-    the official runner's fixed top-5 remote call, not a replacement for it.
+    Stage 1 uses precomputed inverted indexes to produce a cheap high-recall
+    shortlist. Stage 2 applies the unchanged full semantic scorer only to that
+    shortlist.
     """
     if not registry.records:
         return []
-    _build_token_df(registry)
-    scored: list[tuple[float, int, dict[str, float | str]]] = []
-    for doc_id, record in registry.records.items():
-        score, parts = score_record(query, qf, record, prior=0.0, registry=registry)
-        # Require some direct evidence; semantic-only broad matches are not enough
-        # to enter the candidate set.
-        lexical = float(parts.get("lexical", 0.0))
-        exact_slot = any(float(parts.get(k, 0.0)) > 0 for k in ("rank", "bank", "persona", "debt", "quantity"))
-        if lexical >= 0.45 or (lexical >= 0.18 and exact_slot):
-            scored.append((score, doc_id, parts))
-    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    shortlist = _cheap_local_shortlist(
+        query,
+        qf,
+        registry,
+        limit=shortlist_limit,
+    )
+
+    scored: list[
+        tuple[
+            float,
+            int,
+            dict[str, float | str],
+        ]
+    ] = []
+
+    for doc_id in shortlist:
+        record = registry.records[doc_id]
+
+        score, parts = score_record(
+            query,
+            qf,
+            record,
+            prior=0.0,
+            registry=registry,
+        )
+
+        lexical = float(
+            parts.get(
+                "lexical",
+                0.0,
+            )
+        )
+
+        exact_slot = any(
+            float(parts.get(key, 0.0)) > 0
+            for key in (
+                "rank",
+                "bank",
+                "persona",
+                "debt",
+                "quantity",
+            )
+        )
+
+        if (
+            lexical >= 0.45
+            or (
+                lexical >= 0.18
+                and exact_slot
+            )
+        ):
+            scored.append(
+                (
+                    score,
+                    doc_id,
+                    parts,
+                )
+            )
+
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            item[1],
+        )
+    )
+
     results: list[dict[str, Any]] = []
-    for local_rank, (score, doc_id, parts) in enumerate(scored[:limit], start=1):
-        rec = registry.records[doc_id]
-        results.append({
-            "doc_id": doc_id,
-            "text": rec.answer or rec.brief_answer,
-            "category": rec.category,
-            "question": rec.question,
-            "brief_answer": rec.brief_answer,
-            "keyword": rec.keyword,
-            "bm25": 0.0,
-            "dense": 0.0,
-            "fused": 0.0,
-            "server_fused": 0.0,
-            "local_retrieval_score": score,
-            "local_rank": local_rank,
-            "candidate_source": "verified_local_backfill",
-            "trusted": True,
-            "citation_eligible": True,
-            "provenance_status": "VERIFIED_LOCAL",
-            "local_parts": parts,
-        })
+
+    for local_rank, (
+        score,
+        doc_id,
+        parts,
+    ) in enumerate(
+        scored[:limit],
+        start=1,
+    ):
+        record = registry.records[doc_id]
+
+        results.append(
+            {
+                "doc_id": doc_id,
+                "text": (
+                    record.answer
+                    or record.brief_answer
+                ),
+                "category": record.category,
+                "question": record.question,
+                "brief_answer": record.brief_answer,
+                "keyword": record.keyword,
+                "bm25": 0.0,
+                "dense": 0.0,
+                "fused": 0.0,
+                "server_fused": 0.0,
+                "local_retrieval_score": score,
+                "local_rank": local_rank,
+                "candidate_source": (
+                    "verified_local_backfill"
+                ),
+                "trusted": True,
+                "citation_eligible": True,
+                "provenance_status": (
+                    "VERIFIED_LOCAL"
+                ),
+                "local_parts": parts,
+                "local_shortlist_size": len(
+                    shortlist
+                ),
+            }
+        )
+
     return results
 
 
