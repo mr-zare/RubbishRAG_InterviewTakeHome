@@ -59,13 +59,17 @@ def test_p11_focused_rank_query_uses_bounded_context():
         max_k=4,
     )
 
-    assert len(selected) < len(hits)
+    assert 1 <= len(selected) < len(hits)
 
-    assert decision.sufficiency in {
-        "sufficient",
-        "insufficient",
-        "conflicting",
-    }
+    assert (
+        decision.sufficiency
+        == "sufficient"
+    )
+
+    assert (
+        decision.next_action
+        == "answer"
+    )
 
 
 def test_p11_untrusted_first_hit_cannot_trigger_early_answer():
@@ -100,11 +104,18 @@ def test_p11_untrusted_first_hit_cannot_trigger_early_answer():
         max_k=2,
     )
 
-    assert not (
-        len(selected) == 1
-        and selected[0]["doc_id"]
-        == 97999
-        and decision.next_action
+    assert [
+        hit["doc_id"]
+        for hit in selected
+    ] == [97005]
+
+    assert (
+        decision.sufficiency
+        == "sufficient"
+    )
+
+    assert (
+        decision.next_action
         == "answer"
     )
 
@@ -162,4 +173,42 @@ def test_p11_budgeting_is_deterministic():
     assert (
         a_decision.next_action
         == b_decision.next_action
+    )
+
+
+def test_p11_high_numeric_id_is_not_intrinsically_poison():
+    judge = HeuristicFeatureJudge()
+
+    clean = _trusted_hit(
+        97042,
+        "رتبه C1 یعنی چی؟",
+        10.0,
+    )
+
+    selected, decision = adaptive_select_hits(
+        "رتبه C1 یعنی چی؟",
+        [clean],
+        judge,
+        min_k=1,
+        max_k=1,
+    )
+
+    assert [
+        hit["doc_id"]
+        for hit in selected
+    ] == [97042]
+
+    assert (
+        decision.sufficiency
+        == "sufficient"
+    )
+
+    assert (
+        decision.next_action
+        == "answer"
+    )
+
+    assert (
+        decision.poison_detected
+        is False
     )

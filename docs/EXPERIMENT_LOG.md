@@ -782,3 +782,73 @@ latency, or determinism regression.
 
 Decision:
 FREEZE Judge logic as experimental / production-OFF.
+
+---
+
+## H1-H3 — Final Static, Determinism, and Integration Hardening
+
+### Static security audit
+
+The final source audit found one remaining legacy security shortcut in
+`adaptive_select_hits`:
+
+    doc_id >= 9000 -> reject candidate
+
+This was not part of the repaired P11 post-retrieval sufficiency logic. It was
+a residual candidate-filtering heuristic in the adaptive context controller.
+
+### Why the rule was invalid
+
+A numeric document-ID range has no semantic relationship to provenance or
+trust.
+
+The rule could:
+- reject legitimate candidates with high numeric IDs;
+- fail to reject an untrusted candidate with a low numeric ID;
+- encode knowledge of a particular adversarial fixture into runtime behavior.
+
+It therefore violated the provenance architecture established in P7 and
+Elective F.
+
+### Fix
+
+Adaptive candidate admission is now provenance-based.
+
+Candidates are rejected when explicitly untrusted or uncitable.
+
+Normal runtime candidates must resolve to the trusted local corpus.
+
+Synthetic contract-test candidates use the explicit test-only
+`remote_unverified_test` path and must explicitly assert both trust and citation
+eligibility.
+
+Numeric document-ID values have no security meaning.
+
+### Test-strengthening finding
+
+The initial adaptive-budget tests were too permissive: an empty selected
+evidence set could satisfy the bounded-context assertion.
+
+The tests were strengthened to require:
+- actual useful evidence selection;
+- sufficient/answer decisions for clean focused evidence;
+- explicit removal of an untrusted candidate;
+- preservation of a trusted candidate even when its numeric ID is greater than
+  the old poison threshold.
+
+### Final invariants
+
+The hardening suite checks:
+- registered production stages;
+- Judge remains production-OFF;
+- no visible benchmark access from runtime code;
+- no magic poison-ID thresholds;
+- no legacy fused-score-as-confidence logic;
+- unknown poisoned evidence cannot answer;
+- high-score semantic conflicts cannot suppress clean evidence;
+- duplicate evidence cannot duplicate citations;
+- adaptive behavior is deterministic.
+
+Decision:
+FREEZE H1-H3 after targeted, full offline, cold-process, and static-audit
+validation pass.

@@ -506,6 +506,69 @@ Return ONLY a valid JSON object matching the requested schema. Do not generate e
 # 5. Dynamic Context Budgeting / Adaptive Stopping Policy
 # ---------------------------------------------------------------------------
 
+def _adaptive_candidate_is_eligible(
+    hit: Dict[str, Any],
+) -> bool:
+    """Whether a candidate may enter adaptive evidence selection.
+
+    Trust must never be inferred from a numeric document-ID range.
+
+    Rules:
+    - explicitly untrusted or uncitable candidates are rejected;
+    - synthetic contract-test candidates are accepted only when trust and
+      citation eligibility are explicitly asserted;
+    - normal runtime candidates must resolve to the trusted local corpus.
+
+    The last rule prevents an external payload from self-asserting trust merely
+    by setting trusted=True.
+    """
+
+    if (
+        hit.get("trusted") is False
+        or hit.get("citation_eligible") is False
+    ):
+        return False
+
+    candidate_source = str(
+        hit.get("candidate_source")
+        or ""
+    )
+
+    # Explicit test-only contract path. Production candidates do not establish
+    # trust through these fields alone.
+    if (
+        candidate_source
+        == "remote_unverified_test"
+    ):
+        return (
+            hit.get("trusted") is True
+            and hit.get(
+                "citation_eligible"
+            ) is True
+        )
+
+    try:
+        doc_id = int(
+            hit.get(
+                "doc_id",
+                -1,
+            )
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+    from .corpus import get_registry
+
+    registry = get_registry()
+
+    return registry.is_trusted(
+        doc_id
+    )
+
+
 def adaptive_select_hits(
     query: str,
     ranked_hits: List[Dict[str, Any]],
@@ -522,8 +585,11 @@ def adaptive_select_hits(
     last_decision: Optional[EvidenceDecision] = None
 
     for hit in ranked_hits[:max_k]:
-        # Filter obvious poison docs from selection
-        if hit.get("doc_id", 0) >= 9000:
+        # Candidate admission is provenance-based. Numeric document-ID ranges
+        # carry no trust or adversarial meaning.
+        if not _adaptive_candidate_is_eligible(
+            hit
+        ):
             continue
 
         selected.append(hit)
