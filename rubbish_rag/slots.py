@@ -415,98 +415,406 @@ _INTERROGATIVE_CUES = (
     "چی می‌شود",
 )
 
+_EXISTENCE_NEGATIVE_CUES = (
+    "ندارم",
+    "ندارد",
+    "ندارند",
+    "نداشت",
+    "نداشتم",
+    "نداشته",
+    "نیست",
+    "وجود ندارد",
+)
 
-def _is_interrogative(
-    original_text: str,
-    canonical_text: str,
-    match_text: str,
+_EXISTENCE_POSITIVE_CUES = (
+    "دارم",
+    "دارد",
+    "دارند",
+    "داشتم",
+    "داشت",
+    "داشته",
+    "وجود دارد",
+)
+
+
+def _split_surface_clauses(
+    surface_text: str,
+) -> list[str]:
+    """Split before match normalization can discard punctuation.
+
+    Besides explicit sentence separators, split before a new interrogative
+    clause such as "... دارم، آیا ...".
+    """
+
+    marked = surface_text
+
+    # Preserve the punctuation inside the preceding clause so question marks
+    # remain available to modality detection.
+    marked = re.sub(
+        r"([؛;.!?؟]+)",
+        r"\1\n",
+        marked,
+    )
+
+    # Contrast markers define a new semantic scope.
+    marked = re.sub(
+        r"\b(?:ولی|اما)\b",
+        "\n",
+        marked,
+    )
+
+    # Persian prose frequently uses a comma before "آیا".
+    marked = re.sub(
+        r"[,،]\s*(?=(?:آیا|چرا|چطور|چگونه)\b)",
+        "\n",
+        marked,
+    )
+
+    # Also support questions without punctuation.
+    marked = re.sub(
+        r"\s+(?=(?:آیا|چرا|چطور|چگونه)\b)",
+        "\n",
+        marked,
+    )
+
+    return [
+        clause.strip()
+        for clause in marked.splitlines()
+        if clause.strip()
+    ]
+
+
+def _clause_is_interrogative(
+    surface_clause: str,
+    match_clause: str,
 ) -> bool:
-    """Detect question semantics before match normalization removes punctuation."""
-
-    surface = f"{original_text} {canonical_text}"
-
-    if "؟" in surface or "?" in surface:
+    if (
+        "؟" in surface_clause
+        or "?" in surface_clause
+    ):
         return True
 
     return any(
-        cue in match_text
+        cue in match_clause
         for cue in _INTERROGATIVE_CUES
     )
 
 
-def _propositions(
+def _word_spans(
     text: str,
-    debts: list[EntityMention],
-    *,
-    interrogative: bool = False,
-) -> list[Proposition]:
-    """Extract scoped proposition polarity.
+    phrases: tuple[str, ...],
+) -> list[tuple[int, int, str]]:
+    spans: list[tuple[int, int, str]] = []
 
-    Explicit negation is stronger than interrogative status:
-      تاثیر دارد.   -> POSITIVE
-      تاثیر ندارد.  -> NEGATIVE
-      تاثیر دارد؟   -> UNKNOWN
-      تاثیر ندارد؟  -> NEGATIVE
+    for phrase in phrases:
+        normalized = normalize_match_text(
+            phrase
+        )
+
+        if not normalized:
+            continue
+
+        pattern = (
+            r"(?<!\w)"
+            + re.escape(normalized)
+            + r"(?!\w)"
+        )
+
+        for match in re.finditer(
+            pattern,
+            text,
+        ):
+            spans.append(
+                (
+                    match.start(),
+                    match.end(),
+                    normalized,
+                )
+            )
+
+    return spans
+
+
+def _span_distance(
+    a_start: int,
+    a_end: int,
+    b_start: int,
+    b_end: int,
+) -> int:
+    if b_end <= a_start:
+        return a_start - b_end
+
+    if b_start >= a_end:
+        return b_start - a_end
+
+    return 0
+
+
+def _debt_polarity(
+    clause: str,
+    debt: EntityMention,
+    *,
+    interrogative: bool,
+) -> tuple[Polarity, str | None]:
+    """Resolve existence polarity around this debt mention only.
+
+    Event negation such as "پرداخت نشده" must not imply that the debt itself
+    does not exist.
     """
 
-    clauses = [
-        c.strip()
-        for c in re.split(
-            r"(?:\bولی\b|\bاما\b|[؛;.!?؟])",
-            text,
-        )
-        if c.strip()
-    ]
-
-    result: list[Proposition] = []
-
-    for clause in clauses:
-        is_neg = any(
-            cue in clause
-            for cue in _NEGATION_CUES
-        )
-
-        clause_is_question = (
-            interrogative
-            or any(
-                cue in clause
-                for cue in _INTERROGATIVE_CUES
+    terms = tuple(
+        dict.fromkeys(
+            normalize_match_text(x)
+            for x in (
+                debt.raw_text,
+                debt.canonical_value,
             )
+            if x
         )
+    )
 
-        if is_neg:
-            polarity = Polarity.NEGATIVE
-        elif clause_is_question:
-            polarity = Polarity.UNKNOWN
-        else:
-            polarity = Polarity.POSITIVE
+    mention_spans: list[
+        tuple[int, int, str]
+    ] = []
 
-        cue = next(
-            (
-                x
-                for x in _NEGATION_CUES
-                if x in clause
-            ),
+    for term in terms:
+        if not term:
+            continue
+
+        for match in re.finditer(
+            re.escape(term),
+            clause,
+        ):
+            mention_spans.append(
+                (
+                    match.start(),
+                    match.end(),
+                    term,
+                )
+            )
+
+    if not mention_spans:
+        return (
+            Polarity.UNKNOWN
+            if interrogative
+            else Polarity.POSITIVE,
             None,
         )
 
-        for debt in debts:
-            if (
-                debt.canonical_value in clause
-                or debt.raw_text in clause
-            ):
-                result.append(
-                    Proposition(
-                        concept=f"DEBT:{debt.canonical_value}",
-                        polarity=polarity,
-                        cue=cue,
-                    )
+    cue_candidates: list[
+        tuple[int, int, Polarity, str]
+    ] = []
+
+    for cue_start, cue_end, cue in _word_spans(
+        clause,
+        _EXISTENCE_NEGATIVE_CUES,
+    ):
+        for mention_start, mention_end, _ in mention_spans:
+            distance = _span_distance(
+                mention_start,
+                mention_end,
+                cue_start,
+                cue_end,
+            )
+
+            cue_candidates.append(
+                (
+                    distance,
+                    0,
+                    Polarity.NEGATIVE,
+                    cue,
+                )
+            )
+
+    for cue_start, cue_end, cue in _word_spans(
+        clause,
+        _EXISTENCE_POSITIVE_CUES,
+    ):
+        for mention_start, mention_end, _ in mention_spans:
+            distance = _span_distance(
+                mention_start,
+                mention_end,
+                cue_start,
+                cue_end,
+            )
+
+            cue_candidates.append(
+                (
+                    distance,
+                    1,
+                    Polarity.POSITIVE,
+                    cue,
+                )
+            )
+
+    if cue_candidates:
+        distance, _, polarity, cue = min(
+            cue_candidates,
+            key=lambda item: (
+                item[0],
+                item[1],
+            ),
+        )
+
+        # Do not attach an existence cue from a distant proposition.
+        if distance <= 28:
+            return polarity, cue
+
+    return (
+        (
+            Polarity.UNKNOWN
+            if interrogative
+            else Polarity.POSITIVE
+        ),
+        None,
+    )
+
+
+def _effect_polarity(
+    clause: str,
+    *,
+    interrogative: bool,
+) -> tuple[Polarity, str | None]:
+    """Scope effect negation locally around effect expressions."""
+
+    effect_spans: list[
+        tuple[int, int]
+    ] = []
+
+    for cue in _EFFECT_CUES:
+        normalized = normalize_match_text(
+            cue
+        )
+
+        if not normalized:
+            continue
+
+        for match in re.finditer(
+            re.escape(normalized),
+            clause,
+        ):
+            effect_spans.append(
+                (
+                    match.start(),
+                    match.end(),
+                )
+            )
+
+    if not effect_spans:
+        return (
+            Polarity.UNKNOWN
+            if interrogative
+            else Polarity.POSITIVE,
+            None,
+        )
+
+    for effect_start, effect_end in effect_spans:
+        # Negation of an EFFECT usually occurs immediately around/after the
+        # effect phrase: "تاثیر ندارد", "موثر نیست", "اثر نمی گذارد".
+        window = clause[
+            max(0, effect_start - 6):
+            min(
+                len(clause),
+                effect_end + 36,
+            )
+        ]
+
+        for cue in _NEGATION_CUES:
+            normalized = normalize_match_text(
+                cue
+            )
+
+            if normalized and normalized in window:
+                return (
+                    Polarity.NEGATIVE,
+                    normalized,
                 )
 
+    if interrogative:
+        return Polarity.UNKNOWN, None
+
+    return Polarity.POSITIVE, None
+
+
+def _propositions(
+    surface_text: str,
+    debts: list[EntityMention],
+) -> list[Proposition]:
+    """Extract clause- and target-scoped propositions.
+
+    Important distinction:
+      "بدهی مالیاتی ندارم؛ آیا چک اثر دارد؟"
+
+    becomes:
+      DEBT:مالیاتی -> NEGATIVE
+      DEBT:چک      -> UNKNOWN
+      EFFECT       -> UNKNOWN
+
+    rather than spreading one polarity/modality across the whole query.
+    """
+
+    result: list[Proposition] = []
+
+    for surface_clause in _split_surface_clauses(
+        surface_text
+    ):
+        clause = normalize_match_text(
+            surface_clause
+        )
+
+        if not clause:
+            continue
+
+        interrogative = _clause_is_interrogative(
+            surface_clause,
+            clause,
+        )
+
+        for debt in debts:
+            terms = {
+                normalize_match_text(
+                    debt.raw_text or ""
+                ),
+                normalize_match_text(
+                    debt.canonical_value or ""
+                ),
+            }
+
+            terms.discard("")
+
+            if not any(
+                term in clause
+                for term in terms
+            ):
+                continue
+
+            polarity, cue = _debt_polarity(
+                clause,
+                debt,
+                interrogative=interrogative,
+            )
+
+            result.append(
+                Proposition(
+                    concept=(
+                        f"DEBT:{debt.canonical_value}"
+                    ),
+                    polarity=polarity,
+                    cue=cue,
+                )
+            )
+
         if any(
-            effect_cue in clause
-            for effect_cue in _EFFECT_CUES
+            normalize_match_text(cue)
+            in clause
+            for cue in _EFFECT_CUES
+            if normalize_match_text(cue)
         ):
+            polarity, cue = _effect_polarity(
+                clause,
+                interrogative=interrogative,
+            )
+
             result.append(
                 Proposition(
                     concept="EFFECT",
@@ -557,16 +865,9 @@ def parse_query(query: str | None) -> QuerySemanticFrame:
     entities_count = len(banks) + len(ranks) + len(personas) + len(debts)
     relation = _relation(text, entities_count)
     intent = _intent(text, ranks, debts, quantities)
-    interrogative = _is_interrogative(
-        norm_result.original_text,
-        norm_result.canonical_text,
-        text,
-    )
-
     propositions = _propositions(
-        text,
+        norm_result.original_text,
         debts,
-        interrogative=interrogative,
     )
     ambiguity = _ambiguity(intent, text, debts, ranks)
 

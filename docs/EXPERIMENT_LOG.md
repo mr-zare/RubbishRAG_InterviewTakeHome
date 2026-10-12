@@ -629,3 +629,48 @@ Security properties demonstrated:
 
 Decision:
 FREEZE adversarial provenance/evidence-selection behavior.
+
+---
+
+## Elective G — Clause-Scoped Negation and Polarity
+
+Goal:
+Prevent interrogative and negation scope from leaking across independent
+propositions in multi-clause Persian queries.
+
+Initial red-team result:
+- 10/12 tests passed.
+- Two clause-scope failures were found.
+
+Failure 1:
+A positive premise followed by a question:
+  "بدهی مالیاتی دارم؛ آیا ... تاثیر دارد؟"
+was represented with the debt proposition as UNKNOWN.
+
+Failure 2:
+In:
+  "بدهی مالیاتی ندارم؛ آیا چک ... تاثیر دارد؟"
+the first clause's negation leaked into the check-debt proposition.
+
+Root cause:
+- interrogative status was query-global;
+- proposition extraction operated on match_text after punctuation had already
+  been removed;
+- negation was therefore able to cross semantic clause boundaries.
+
+Change:
+- clause segmentation now occurs on the original surface before punctuation
+  removal;
+- each clause is normalized independently;
+- interrogative modality is clause-local;
+- debt existence polarity is resolved around the specific debt mention;
+- effect negation is scoped locally around the effect expression;
+- event negation such as "پرداخت نشده" does not imply non-existence of debt.
+
+Additional stress cases:
+- comma before an interrogative clause;
+- independent debt polarity joined with "و";
+- unpaid-event negation combined with a positive effect statement.
+
+Decision:
+FREEZE clause-scoped polarity after targeted and full offline validation pass.
