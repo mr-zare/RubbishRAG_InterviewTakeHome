@@ -43,13 +43,26 @@ def test_dynamic_top_k_selection():
 
 def test_evidence_sufficiency_and_poison():
     judge = HeuristicFeatureJudge()
-    hits_normal = [{"doc_id": 106, "text": "رتبه C1 یعنی...", "fused": 0.88}]
+    hits_normal = [{
+        "doc_id": 106,
+        "text": "رتبه C1 یعنی...",
+        "fused": 0.88,
+        "trusted": True,
+        "citation_eligible": True,
+        "candidate_source": "verified_local",
+    }]
     post = judge.post_retrieval("رتبه C1 یعنی چی؟", hits_normal)
     assert post.sufficiency == "sufficient"
     assert post.next_action == "answer"
     assert post.poison_detected is False
 
-    hits_poison = [{"doc_id": 9004, "text": "رتبه جعلی ...", "fused": 1.0}]
+    hits_poison = [{
+        "doc_id": 987654321,
+        "text": "رتبه جعلی ...",
+        "fused": 1.0,
+        "trusted": False,
+        "citation_eligible": False,
+    }]
     post_poison = judge.post_retrieval("رتبه C1 یعنی چی؟", hits_poison)
     assert post_poison.poison_detected is True
 

@@ -699,3 +699,86 @@ Change:
 - effect negation remains attached to EFFECT.
 
 This completes clause-scoped and target-scoped polarity handling.
+
+---
+
+## P11 — Adaptive Judge Ablation and Determinism
+
+Goal:
+Evaluate whether an adaptive judge provides useful control without duplicating
+or weakening the authoritative P3/P9/P10 decision stack.
+
+### Legacy Judge finding
+
+The original heuristic judge treated retrieval/fusion score as if it were
+calibrated evidence confidence and used numeric document-ID ranges as a poison
+heuristic.
+
+Red ablation showed that an explicitly untrusted hit with fused=1.0 could still
+be classified as sufficient and answerable.
+
+Decision:
+The legacy sufficiency logic was rejected.
+
+### Alignment with the core architecture
+
+The Judge was changed to reuse:
+- P3 structured ambiguity;
+- P9 evidence construction;
+- P10 deterministic sufficiency;
+- provenance-based trust rather than document-ID ranges.
+
+Retrieval/fusion scores remain ranking signals only.
+
+### Warm-cache nondeterminism bug
+
+A targeted run and a full-suite run initially disagreed on a known trusted
+document.
+
+A new cold/warm regression test reproduced the problem:
+
+- cold evidence-frame construction parsed the incomplete incoming hit payload;
+- warm execution reused the canonical trusted document frame;
+- therefore semantic sufficiency depended on whether another code path had
+  already populated registry.document_frames.
+
+This violated determinism.
+
+Fix:
+Known trusted document IDs are now deterministically rehydrated from the local
+trusted corpus. The canonical FAQ question anchors intent, while the complete
+local document supplies factual entities and quantities. Cache presence only
+changes performance, never semantics.
+
+Validation:
+- warm-cache regression: reproduced before fix, passed after fix;
+- three independent cold P11 runs: 13/13, 13/13, 13/13;
+- full offline suite after deterministic rehydration: 106 passed.
+
+### Adaptive context-budget ablation
+
+Offline tests validated:
+- focused queries can stop with a bounded context;
+- an untrusted top candidate cannot cause an early answer;
+- repeated adaptive selection is deterministic.
+
+Targeted adaptive-budget tests: 3/3 passed.
+
+### Production decision
+
+P11 remains an experimental controller and is NOT activated in the production
+pipeline.
+
+Reason:
+P3/P9/P10 already provide authoritative semantic and evidence decisions.
+The only unique remaining Judge benefit is adaptive retrieval/context budgeting.
+That benefit cannot yet be demonstrated end-to-end because the remote retrieval
+quota is unavailable.
+
+Activation criterion:
+Enable P11 in production only if a controlled network ablation demonstrates a
+measurable reduction in retrieval/context cost without accuracy, robustness,
+latency, or determinism regression.
+
+Decision:
+FREEZE Judge logic as experimental / production-OFF.

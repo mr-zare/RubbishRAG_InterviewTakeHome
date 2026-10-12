@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .corpus import get_registry
-from .models import EntityType, QuerySemanticFrame
+from .models import (
+    EntityType,
+    Intent,
+    QuerySemanticFrame,
+)
 from .normalize_fa import normalize_match_text
 from .slots import parse_query
 
@@ -206,29 +210,105 @@ def assess_sufficiency(
     )
 
 
-def _frame_for_hit(hit: dict[str, Any]) -> QuerySemanticFrame:
-    # P8 already warms trusted document semantic frames. Reuse them instead
-    # of reparsing long FAQ answers repeatedly during evidence selection.
-    #
-    # Synthetic public contract tests intentionally use supplied hit text.
-    if hit.get("candidate_source") != "remote_unverified_test":
-        try:
-            doc_id = int(hit.get("doc_id", -1))
-        except (TypeError, ValueError):
-            doc_id = -1
+def _frame_for_hit(
+    hit: dict[str, Any],
+) -> QuerySemanticFrame:
+    """Build evidence semantics deterministically.
 
+    For a document ID that belongs to the trusted local corpus, semantic
+    interpretation must always come from the canonical local record.
+
+    This must not depend on whether another code path happened to warm
+    registry.document_frames earlier in the process.
+
+    Synthetic public contract tests may explicitly use
+    candidate_source="remote_unverified_test"; those continue to be
+    interpreted from their supplied payload.
+    """
+
+    try:
+        doc_id = int(
+            hit.get(
+                "doc_id",
+                -1,
+            )
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        doc_id = -1
+
+    if (
+        hit.get("candidate_source")
+        != "remote_unverified_test"
+    ):
         registry = get_registry()
-        cached = registry.document_frames.get(doc_id)
 
-        if cached is not None:
-            return cached
+        record = registry.records.get(
+            doc_id
+        )
 
+        if record is not None:
+            cached = (
+                registry.document_frames.get(
+                    doc_id
+                )
+            )
+
+            if cached is not None:
+                return cached
+
+            # Keep document-frame semantics identical to P8:
+            # intent is anchored in the human FAQ question, while
+            # entities/quantities may also be present in keyword/answer text.
+            question_frame = parse_query(
+                record.question
+            )
+
+            document_frame = parse_query(
+                " ".join(
+                    value
+                    for value in (
+                        record.question,
+                        record.keyword,
+                        record.brief_answer,
+                        record.answer,
+                    )
+                    if value
+                )
+            )
+
+            if (
+                question_frame.intent
+                is not Intent.GENERAL_INFO
+            ):
+                document_frame.intent = (
+                    question_frame.intent
+                )
+
+            registry.document_frames[
+                doc_id
+            ] = document_frame
+
+            return document_frame
+
+    # Explicitly synthetic / external contract inputs use their own payload.
     text = " ".join(
-        str(hit.get(key) or "")
-        for key in ("question", "brief_answer", "text", "keyword")
+        str(
+            hit.get(key)
+            or ""
+        )
+        for key in (
+            "question",
+            "brief_answer",
+            "text",
+            "keyword",
+        )
     )
 
     return parse_query(text)
+
 
 
 def _coverage(

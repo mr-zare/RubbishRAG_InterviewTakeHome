@@ -17,8 +17,16 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
+from .evidence import (
+    assess_sufficiency,
+    build_evidence_set,
+)
 from .normalize_fa import normalize_fa
-from .slots import BANKS, RANKS
+from .slots import (
+    BANKS,
+    RANKS,
+    parse_query,
+)
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -127,6 +135,7 @@ class HeuristicFeatureJudge:
         slots: Optional[Dict[str, Any]] = None,
     ) -> PreRetrievalDecision:
         norm = normalize_fa(query or "")
+        frame = parse_query(query or "")
         words = norm.split()
         word_count = len(words)
         reasons = []
@@ -164,9 +173,24 @@ class HeuristicFeatureJudge:
             target_entities.append(s["PERSONA"])
 
         # 3. Ambiguity & Clarification Gating (Decision 2: CLARIFY)
-        missing_slots = []
-        is_ambiguous = False
-        clarify_prob = 0.05
+        missing_slots = list(
+            frame.ambiguity.missing_required_slots
+        )
+        is_ambiguous = bool(
+            frame.ambiguity.underspecified
+            or missing_slots
+            or frame.ambiguity.conflicting_slots
+        )
+        clarify_prob = (
+            0.90
+            if is_ambiguous
+            else 0.05
+        )
+
+        if is_ambiguous:
+            reasons.append(
+                "P3_STRUCTURED_AMBIGUITY"
+            )
 
         # Check for under-specified debt or bad record
         if (any(k in norm for k in self.DEBT_KEYWORDS) or "سابقه" in norm) and not s.get("DEBT") and not s.get("RANK") and word_count <= 7:
@@ -267,8 +291,12 @@ class HeuristicFeatureJudge:
         hits: List[Dict[str, Any]],
         state: Optional[Dict[str, Any]] = None,
     ) -> EvidenceDecision:
-        norm_q = normalize_fa(query or "")
-        reasons = []
+        """Assess evidence through the same P9/P10 contract as production.
+
+        Retrieval/fusion scores are ranking signals, not calibrated confidence.
+        Provenance, semantic coverage, and conflict status determine whether
+        evidence is sufficient.
+        """
 
         if not hits:
             return EvidenceDecision(
@@ -281,86 +309,158 @@ class HeuristicFeatureJudge:
                 next_action="retrieve_more",
                 confidence=0.90,
                 sufficiency_probability=0.02,
-                reason_codes=["EMPTY_RETRIEVAL_RESULTS"],
+                reason_codes=[
+                    "EMPTY_RETRIEVAL_RESULTS",
+                ],
             )
 
-        # 1. Inspect for adversarial poison documents and keyword repetition
-        poison_ids = [h["doc_id"] for h in hits if h.get("doc_id", 0) >= 9000]
+        frame = parse_query(query)
+
+        evidence = build_evidence_set(
+            query,
+            hits,
+            max_evidence=min(
+                3,
+                len(hits),
+            ),
+        )
+
+        assessment = assess_sufficiency(
+            frame,
+            evidence,
+        )
+
+        # Poison/untrusted detection is provenance-based rather than tied to
+        # any numeric document-ID range.
+        untrusted_items: List[int] = []
+
+        for hit in hits:
+            if (
+                hit.get("trusted") is False
+                or hit.get(
+                    "citation_eligible"
+                ) is False
+            ):
+                try:
+                    untrusted_items.append(
+                        int(
+                            hit.get(
+                                "doc_id",
+                                -1,
+                            )
+                        )
+                    )
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    pass
+
         repetition_flag = False
-        for h in hits:
-            toks = h.get("text", "").split()
-            if toks:
-                from collections import Counter
-                if max(Counter(toks).values()) >= 8:
-                    repetition_flag = True
-                    break
 
-        if poison_ids or repetition_flag:
-            reasons.append("ADVERSARIAL_OR_REPETITION_DETECTED")
+        for hit in hits:
+            tokens = str(
+                hit.get("text") or ""
+            ).split()
 
-        # 2. Check spam probe
-        is_spam_query = any(re.search(pat, norm_q) for pat in self.SPAM_ADVERSARIAL_PATTERNS)
-        if is_spam_query:
-            return EvidenceDecision(
-                sufficiency="irrelevant",
-                evidence_score=0.1,
-                conflicting_items=poison_ids,
-                poison_detected=bool(poison_ids),
-                repetition_detected=repetition_flag,
-                novel_evidence_chunks=len(hits),
-                next_action="abstain",
-                confidence=0.95,
-                sufficiency_probability=0.05,
-                reason_codes=["ADVERSARIAL_SPAM_QUERY", "ABSTAIN_RECOMMENDED"],
+            if not tokens:
+                continue
+
+            from collections import Counter
+
+            counts = Counter(tokens)
+
+            if (
+                counts
+                and max(
+                    counts.values()
+                )
+                >= 8
+            ):
+                repetition_flag = True
+                break
+
+        reason_codes = list(
+            assessment.reasons
+        )
+
+        if untrusted_items:
+            reason_codes.append(
+                "UNTRUSTED_EVIDENCE_DETECTED"
             )
 
-        # 3. Assess collective evidence scores
-        top_hit = hits[0]
-        top_score = top_hit.get("fused", 0.0)
-        score_margin = 0.0
-        if len(hits) >= 2:
-            score_margin = top_score - hits[1].get("fused", 0.0)
+        if repetition_flag:
+            reason_codes.append(
+                "REPETITION_DETECTED"
+            )
 
-        # Check entity alignment with top candidate
-        has_rank = any(rk in norm_q.upper() for rk in RANKS)
-        rank_in_top = any(rk in top_hit.get("text", "").upper() for rk in RANKS if rk in norm_q.upper())
+        if assessment.conflicts:
+            sufficiency = "conflicting"
+            next_action = "clarify"
+            suff_prob = 0.08
 
-        # Calculate sufficiency probability
-        if has_rank and not rank_in_top and len(hits) > 1:
-            # Rank mismatch between query and top hit
-            sufficiency = "insufficient"
-            suff_prob = 0.25
-            next_action = "retrieve_more"
-            reasons.append("ENTITY_MISMATCH_IN_TOP_HIT")
-        elif top_score >= 0.70 or score_margin >= 0.15:
+        elif assessment.sufficient:
             sufficiency = "sufficient"
-            suff_prob = 0.88
             next_action = "answer"
-            reasons.append("HIGH_CONFIDENCE_TOP_HIT")
-        elif top_score < 0.40:
-            sufficiency = "insufficient"
-            suff_prob = 0.20
-            next_action = "retrieve_more"
-            reasons.append("LOW_RETRIEVAL_SIMILARITY")
+            suff_prob = 0.90
+
         else:
-            sufficiency = "sufficient"
-            suff_prob = 0.72
-            next_action = "answer"
-            reasons.append("MODERATE_RETRIEVAL_SUPPORT")
+            sufficiency = "insufficient"
+            next_action = "retrieve_more"
+            suff_prob = 0.15
 
-        conf = max(suff_prob, 1.0 - suff_prob)
+        # Repetition alone is a warning. It must not manufacture or destroy
+        # sufficiency when clean trusted evidence already satisfies P10.
+        poison_detected = bool(
+            untrusted_items
+        )
+
+        evidence_score = (
+            len(
+                evidence.covered_requirements
+            )
+            / max(
+                1,
+                (
+                    len(
+                        evidence.covered_requirements
+                    )
+                    + len(
+                        evidence.uncovered_requirements
+                    )
+                ),
+            )
+        )
 
         return EvidenceDecision(
             sufficiency=sufficiency,
-            evidence_score=round(float(top_score), 3),
-            conflicting_items=poison_ids,
-            poison_detected=bool(poison_ids),
+            evidence_score=round(
+                float(evidence_score),
+                3,
+            ),
+            conflicting_items=sorted(
+                set(untrusted_items)
+            ),
+            poison_detected=poison_detected,
             repetition_detected=repetition_flag,
-            novel_evidence_chunks=len(hits),
+            novel_evidence_chunks=len(
+                evidence.hits
+            ),
             next_action=next_action,
-            confidence=round(conf, 3),
-            sufficiency_probability=round(suff_prob, 3),
-            reason_codes=reasons,
+            confidence=round(
+                max(
+                    suff_prob,
+                    1.0 - suff_prob,
+                ),
+                3,
+            ),
+            sufficiency_probability=round(
+                suff_prob,
+                3,
+            ),
+            reason_codes=sorted(
+                set(reason_codes)
+            ),
         )
 
 
