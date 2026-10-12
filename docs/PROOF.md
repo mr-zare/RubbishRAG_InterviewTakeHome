@@ -433,33 +433,44 @@ The final `traces/trace.jsonl` contains:
 
 This exceeds the minimum diagnostic-probe requirement.
 
-The references below use the trace file line number because
-`rubbish.py inspect-trace <line>` can reproduce the corresponding logged
-retrieval event without issuing a new retrieval request.
+Trace references below use immutable JSONL line addresses of the form
+`trace.jsonl:L<N>`.
+
+Exact reproduction uses:
+
+`sed -n '<N>p' traces/trace.jsonl`
+
+rather than `rubbish.py inspect-trace <N>`. The CLI `inspect-trace` command is
+a search utility, not a line-addressing interface, and may match multiple
+records.
+
+Trace file SHA-256:
+
+`e9cc474ce6bb325279901d9656e877a835be41f2e2d88ea811c603fb0254bfdf`
 
 ### Exact Trace References
 
 | Trace | Diagnostic purpose | Raw remote observation | Reproduce |
 |---:|---|---|---|
-| 1 | C1 rank / adversarial retrieval | poison-style doc `9004` ranked above trusted doc `106` | `python rubbish.py inspect-trace 1` |
-| 2 | colloquial tax-debt removal | doc `66` top-1 | `python rubbish.py inspect-trace 2` |
-| 4 | returned-check / 24-hour condition | doc `282` top-1 | `python rubbish.py inspect-trace 4` |
-| 5 | short numeric score explanation (`۴۸۰ شدم. چرا؟`) | doc `110` top-1 | `python rubbish.py inspect-trace 5` |
-| 7 | guarantor + delayed installments | doc `276` top-1 | `python rubbish.py inspect-trace 7` |
-| 8 | profitability / missing-score causal question | doc `266` top-1 | `python rubbish.py inspect-trace 8` |
-| 11 | colloquial returned-check removal | doc `47` top-1 | `python rubbish.py inspect-trace 11` |
-| 14 | exports/imports lexical ambiguity | doc `301` top-1; adversarial docs also retrieved | `python rubbish.py inspect-trace 14` |
-| 17 | C3 adversarial retrieval | doc `9004` top-1, trusted C3 doc `108` below it | `python rubbish.py inspect-trace 17` |
-| 18 | supplier-debt semantics | doc `65` top-1 | `python rubbish.py inspect-trace 18` |
-| 19 | paid tax debt + E3 removal | generic tax doc `173` top-1 | `python rubbish.py inspect-trace 19` |
-| 20 | no previous delay but not maximum score | doc `16` top-1 | `python rubbish.py inspect-trace 20` |
-| 22 | A2 adversarial retrieval | doc `9004` top-1, trusted A2 doc `101` second | `python rubbish.py inspect-trace 22` |
-| 90 | Arabic/Persian-character normalization variant | docs `165/166` retrieved identically | `python rubbish.py inspect-trace 90` |
-| 94 | formal export/import wording | doc `301` top-1 | `python rubbish.py inspect-trace 94` |
-| 95 | opposing-polarity export/import wording | retrieval order changes under negation | `python rubbish.py inspect-trace 95` |
-| 100 | intentionally underspecified debt query | mixed debt evidence retrieved | `python rubbish.py inspect-trace 100` |
-| 101 | Bank Saderat + E3 entity query | doc `303` top-1 | `python rubbish.py inspect-trace 101` |
-| 102 | Bank Melli + E3 contrast query | same generic doc `303` initially top-1 | `python rubbish.py inspect-trace 102` |
+| 1 | C1 rank / adversarial retrieval | poison-style doc `9004` ranked above trusted doc `106` | `trace.jsonl:L1` — `sed -n '1p' traces/trace.jsonl` |
+| 2 | colloquial tax-debt removal | doc `66` top-1 | `trace.jsonl:L2` — `sed -n '2p' traces/trace.jsonl` |
+| 4 | returned-check / 24-hour condition | doc `282` top-1 | `trace.jsonl:L4` — `sed -n '4p' traces/trace.jsonl` |
+| 5 | short numeric score explanation (`۴۸۰ شدم. چرا؟`) | doc `110` top-1 | `trace.jsonl:L5` — `sed -n '5p' traces/trace.jsonl` |
+| 7 | guarantor + delayed installments | doc `276` top-1 | `trace.jsonl:L7` — `sed -n '7p' traces/trace.jsonl` |
+| 8 | profitability / missing-score causal question | doc `266` top-1 | `trace.jsonl:L8` — `sed -n '8p' traces/trace.jsonl` |
+| 11 | colloquial returned-check removal | doc `47` top-1 | `trace.jsonl:L11` — `sed -n '11p' traces/trace.jsonl` |
+| 14 | exports/imports lexical ambiguity | doc `301` top-1; adversarial docs also retrieved | `trace.jsonl:L14` — `sed -n '14p' traces/trace.jsonl` |
+| 17 | C3 adversarial retrieval | doc `9004` top-1, trusted C3 doc `108` below it | `trace.jsonl:L17` — `sed -n '17p' traces/trace.jsonl` |
+| 18 | supplier-debt semantics | doc `65` top-1 | `trace.jsonl:L18` — `sed -n '18p' traces/trace.jsonl` |
+| 19 | paid tax debt + E3 removal | generic tax doc `173` top-1 | `trace.jsonl:L19` — `sed -n '19p' traces/trace.jsonl` |
+| 20 | no previous delay but not maximum score | doc `16` top-1 | `trace.jsonl:L20` — `sed -n '20p' traces/trace.jsonl` |
+| 22 | A2 adversarial retrieval | doc `9004` top-1, trusted A2 doc `101` second | `trace.jsonl:L22` — `sed -n '22p' traces/trace.jsonl` |
+| 90 | Arabic/Persian-character normalization variant | docs `165/166` retrieved identically | `trace.jsonl:L90` — `sed -n '90p' traces/trace.jsonl` |
+| 94 | formal export/import wording | doc `301` top-1 | `trace.jsonl:L94` — `sed -n '94p' traces/trace.jsonl` |
+| 95 | opposing-polarity export/import wording | retrieval order changes under negation | `trace.jsonl:L95` — `sed -n '95p' traces/trace.jsonl` |
+| 100 | intentionally underspecified debt query | mixed debt evidence retrieved | `trace.jsonl:L100` — `sed -n '100p' traces/trace.jsonl` |
+| 101 | Bank Saderat + E3 entity query | doc `303` top-1 | `trace.jsonl:L101` — `sed -n '101p' traces/trace.jsonl` |
+| 102 | Bank Melli + E3 contrast query | same generic doc `303` initially top-1 | `trace.jsonl:L102` — `sed -n '102p' traces/trace.jsonl` |
 
 These traces demonstrate why retrieval score alone cannot be treated as
 answer confidence: high-fused candidates may be adversarial, overly generic,

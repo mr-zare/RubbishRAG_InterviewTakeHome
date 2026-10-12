@@ -1000,8 +1000,17 @@ The final runtime trace contained:
 - 1022 valid JSONL retrieval rows;
 - 33 distinct queries.
 
-The final `docs/PROOF.md` now references more than fifteen exact trace line
-numbers and provides corresponding `rubbish.py inspect-trace <line>` commands.
+The final `docs/PROOF.md` references more than fifteen exact JSONL line
+addresses using the convention `trace.jsonl:L<N>` and reproduces them directly
+with `sed -n '<N>p' traces/trace.jsonl`.
+
+The CLI `inspect-trace` command was empirically found to be a search interface,
+not an exact line-number lookup, so it is not used as the authoritative trace
+address.
+
+Trace file SHA-256:
+
+`e9cc474ce6bb325279901d9656e877a835be41f2e2d88ea811c603fb0254bfdf`
 
 This closes the evaluator-facing traceability requirement without issuing new
 retrieval calls.
