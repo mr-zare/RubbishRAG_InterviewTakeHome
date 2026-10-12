@@ -19,6 +19,16 @@ class EvidenceSet:
     exact_text_duplicates_removed: int = 0
 
 
+
+@dataclass(frozen=True, slots=True)
+class SufficiencyAssessment:
+    sufficient: bool
+    reasons: tuple[str, ...] = ()
+    conflicts: tuple[str, ...] = ()
+    critical_uncovered: tuple[str, ...] = ()
+    citable_doc_ids: tuple[int, ...] = ()
+
+
 def query_requirements(frame: QuerySemanticFrame) -> set[str]:
     req: set[str] = set()
 
@@ -44,6 +54,156 @@ def query_requirements(frame: QuerySemanticFrame) -> set[str]:
             )
 
     return req
+
+
+_CRITICAL_REQUIREMENT_PREFIXES = (
+    "intent:",
+    "bank:",
+    "rank:",
+    "debt:",
+    "quantity:",
+)
+
+_HARD_CONFLICT_FIELDS = (
+    "bank_reason",
+    "rank_reason",
+    "debt_reason",
+    "quantity_reason",
+    "polarity_reason",
+)
+
+_HARD_CONFLICT_VALUES = {
+    "BANK_CONFLICT",
+    "RANK_CONFLICT",
+    "DEBT_CONFLICT",
+    "QUANTITY_CONFLICT",
+    "POLARITY_CONFLICT",
+}
+
+
+def _is_citation_eligible(
+    hit: dict[str, Any],
+) -> bool:
+    """Fail closed when provenance explicitly marks a hit unusable.
+
+    Missing metadata remains backward-compatible with public/synthetic
+    contract tests. Production provenance is expected to set these flags
+    explicitly.
+    """
+    if hit.get("citation_eligible") is False:
+        return False
+
+    if hit.get("trusted") is False:
+        return False
+
+    return True
+
+
+def _hard_conflicts(
+    hits: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    conflicts: set[str] = set()
+
+    for hit in hits:
+        parts = hit.get("local_parts")
+
+        if not isinstance(parts, dict):
+            continue
+
+        try:
+            doc_id = int(
+                hit.get("doc_id", -1)
+            )
+        except (TypeError, ValueError):
+            doc_id = -1
+
+        for field in _HARD_CONFLICT_FIELDS:
+            value = parts.get(field)
+
+            if value in _HARD_CONFLICT_VALUES:
+                conflicts.add(
+                    f"{value}:doc={doc_id}"
+                )
+
+    return tuple(sorted(conflicts))
+
+
+def assess_sufficiency(
+    frame: QuerySemanticFrame,
+    evidence: EvidenceSet,
+) -> SufficiencyAssessment:
+    """Hard, deterministic evidence gate.
+
+    Ranking score is intentionally NOT treated as confidence. Sufficiency is
+    determined from provenance, requirement coverage, and semantic
+    consistency.
+    """
+
+    reasons: list[str] = []
+
+    if not evidence.hits:
+        reasons.append(
+            "no_evidence"
+        )
+
+    citable_doc_ids: list[int] = []
+
+    for hit in evidence.hits:
+        if not _is_citation_eligible(hit):
+            continue
+
+        try:
+            doc_id = int(
+                hit.get("doc_id", -1)
+            )
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            doc_id >= 0
+            and doc_id not in citable_doc_ids
+        ):
+            citable_doc_ids.append(doc_id)
+
+    if evidence.hits and not citable_doc_ids:
+        reasons.append(
+            "no_trusted_citable_evidence"
+        )
+
+    critical_uncovered = tuple(
+        sorted(
+            requirement
+            for requirement
+            in evidence.uncovered_requirements
+            if requirement.startswith(
+                _CRITICAL_REQUIREMENT_PREFIXES
+            )
+        )
+    )
+
+    if critical_uncovered:
+        reasons.append(
+            "critical_requirements_uncovered"
+        )
+
+    conflicts = _hard_conflicts(
+        evidence.hits
+    )
+
+    if conflicts:
+        reasons.append(
+            "hard_semantic_conflict"
+        )
+
+    return SufficiencyAssessment(
+        sufficient=not reasons,
+        reasons=tuple(reasons),
+        conflicts=conflicts,
+        critical_uncovered=critical_uncovered,
+        citable_doc_ids=tuple(
+            citable_doc_ids
+        ),
+    )
 
 
 def _frame_for_hit(hit: dict[str, Any]) -> QuerySemanticFrame:
@@ -180,9 +340,24 @@ def build_evidence_set(
             if selected and adds <= 0:
                 continue
 
+            # Provenance precedes ranking score. An untrusted/uncitable
+            # candidate must not suppress a lower-ranked trusted source merely
+            # because its retrieval score is larger.
+            provenance_priority = (
+                1
+                if _is_citation_eligible(hit)
+                else 0
+            )
+
             key = (
+                provenance_priority,
                 adds if selected else 10_000,
-                float(hit.get("rerank_score", 0.0)),
+                float(
+                    hit.get(
+                        "rerank_score",
+                        0.0,
+                    )
+                ),
                 -idx,
             )
 

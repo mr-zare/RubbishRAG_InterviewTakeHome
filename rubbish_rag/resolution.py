@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .evidence import build_evidence_set
+from .evidence import (
+    assess_sufficiency,
+    build_evidence_set,
+)
 from .models import Intent
 from .slots import parse_query
 
@@ -35,7 +38,17 @@ def resolve_grounded(query: str, ranked_hits: list[dict[str, Any]]) -> dict[str,
     if clarify:
         return clarify
 
-    evidence = build_evidence_set(query, ranked_hits, max_evidence=3)
+    evidence = build_evidence_set(
+        query,
+        ranked_hits,
+        max_evidence=3,
+    )
+
+    assessment = assess_sufficiency(
+        frame,
+        evidence,
+    )
+
     if not evidence.hits:
         # Public resolver contract only advertises answer|clarify. P11 can map
         # this internal insufficient state to a true abstention later.
@@ -45,6 +58,51 @@ def resolve_grounded(query: str, ranked_hits: list[dict[str, Any]]) -> dict[str,
             "options": ["رتبه و امتیاز", "بدهی مالیاتی", "چک", "تسهیلات و وام"],
             "missing_slots": [],
             "reason": "insufficient_trusted_evidence",
+            "cites": [],
+        }
+
+    if not assessment.sufficient:
+        reasons = set(
+            assessment.reasons
+        )
+
+        if "hard_semantic_conflict" in reasons:
+            question = (
+                "شواهد بازیابی‌شده با جزئیات پرسش ناسازگار است؛ "
+                "لطفاً اطلاعات کلیدی مانند نوع بدهی، رتبه، بانک یا عدد موردنظر را دوباره مشخص کنید."
+            )
+        elif "critical_requirements_uncovered" in reasons:
+            question = (
+                "برای پاسخ قطعی، بخشی از اطلاعات کلیدی پرسش در شواهد موجود پوشش داده نشده است؛ "
+                "لطفاً جزئیات را دقیق‌تر مشخص کنید."
+            )
+        else:
+            question = (
+                "شواهد قابل اتکای کافی برای پاسخ قطعی پیدا نشد؛ "
+                "لطفاً موضوع را دقیق‌تر مشخص کنید."
+            )
+
+        return {
+            "status": "clarify",
+            "question": question,
+            "options": [],
+            "missing_slots": [],
+            "reason": "insufficient_evidence",
+            "decision": {
+                "sufficient": False,
+                "reasons": list(
+                    assessment.reasons
+                ),
+                "critical_uncovered": list(
+                    assessment.critical_uncovered
+                ),
+                "conflicts": list(
+                    assessment.conflicts
+                ),
+                "citable_doc_ids": list(
+                    assessment.citable_doc_ids
+                ),
+            },
             "cites": [],
         }
 
@@ -77,7 +135,17 @@ def resolve_grounded(query: str, ranked_hits: list[dict[str, Any]]) -> dict[str,
         "brief": brief,
         "cites": cites[:3],
         "evidence": {
-            "covered_requirements": sorted(evidence.covered_requirements),
-            "uncovered_requirements": sorted(evidence.uncovered_requirements),
+            "covered_requirements": sorted(
+                evidence.covered_requirements
+            ),
+            "uncovered_requirements": sorted(
+                evidence.uncovered_requirements
+            ),
+            "sufficiency": {
+                "sufficient": True,
+                "reasons": [],
+                "critical_uncovered": [],
+                "conflicts": [],
+            },
         },
     }

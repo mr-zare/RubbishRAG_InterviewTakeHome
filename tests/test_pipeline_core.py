@@ -242,3 +242,234 @@ def test_exact_trusted_faq_is_candidate_generation_anchor():
         == "verified_exact_question"
     )
     assert matching["exact_question_anchor"] is True
+
+
+def test_p10_no_evidence_never_answers():
+    res = resolve_grounded(
+        "رتبه C1 یعنی چی؟",
+        [],
+    )
+
+    assert res["status"] == "clarify"
+    assert res["cites"] == []
+
+
+def test_p10_uncovered_critical_requirement_never_answers():
+    hits = [
+        {
+            "doc_id": 92001,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1 یک رتبه اعتباری است.",
+            "text": "رتبه C1 یک رتبه اعتباری است.",
+            "rerank_score": 10.0,
+            "candidate_source": "remote_unverified_test",
+        }
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 بانک صادرات یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "clarify"
+    assert (
+        "critical_requirements_uncovered"
+        in res["decision"]["reasons"]
+    )
+
+    assert any(
+        x.startswith("bank:")
+        for x in res["decision"][
+            "critical_uncovered"
+        ]
+    )
+
+
+def test_p10_explicitly_untrusted_evidence_never_answers():
+    hits = [
+        {
+            "doc_id": 92002,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1 یک رتبه اعتباری است.",
+            "text": "رتبه C1 یک رتبه اعتباری است.",
+            "rerank_score": 100.0,
+            "candidate_source": "remote_unverified_test",
+            "trusted": False,
+            "citation_eligible": False,
+        }
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "clarify"
+    assert (
+        "no_trusted_citable_evidence"
+        in res["decision"]["reasons"]
+    )
+    assert res["cites"] == []
+
+
+def test_p10_hard_rank_conflict_never_answers():
+    hits = [
+        {
+            "doc_id": 92003,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "پاسخ تست",
+            "text": "رتبه C1",
+            "rerank_score": 20.0,
+            "candidate_source": "remote_unverified_test",
+            "trusted": True,
+            "citation_eligible": True,
+            "local_parts": {
+                "rank_reason": "RANK_CONFLICT",
+            },
+        }
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "clarify"
+    assert (
+        "hard_semantic_conflict"
+        in res["decision"]["reasons"]
+    )
+    assert any(
+        "RANK_CONFLICT" in x
+        for x in res["decision"][
+            "conflicts"
+        ]
+    )
+
+
+def test_p10_polarity_conflict_never_answers():
+    hits = [
+        {
+            "doc_id": 92004,
+            "question": "بدهی مالیاتی روی امتیاز تاثیر ندارد.",
+            "brief_answer": "پاسخ تست",
+            "text": "پاسخ تست",
+            "rerank_score": 20.0,
+            "candidate_source": "remote_unverified_test",
+            "trusted": True,
+            "citation_eligible": True,
+            "local_parts": {
+                "polarity_reason": (
+                    "POLARITY_CONFLICT"
+                ),
+            },
+        }
+    ]
+
+    res = resolve_grounded(
+        "بدهی مالیاتی روی امتیاز تاثیر دارد.",
+        hits,
+    )
+
+    assert res["status"] == "clarify"
+    assert (
+        "hard_semantic_conflict"
+        in res["decision"]["reasons"]
+    )
+
+
+def test_p10_complete_trusted_evidence_can_answer():
+    hits = [
+        {
+            "doc_id": 92005,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1 یک رتبه اعتباری است.",
+            "text": "رتبه C1 یک رتبه اعتباری است.",
+            "rerank_score": 10.0,
+            "candidate_source": "remote_unverified_test",
+            "trusted": True,
+            "citation_eligible": True,
+            "local_parts": {},
+        }
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "answer"
+    assert res["cites"] == [92005]
+    assert (
+        res["evidence"]["sufficiency"][
+            "sufficient"
+        ]
+        is True
+    )
+
+
+def test_p10_duplicates_do_not_manufacture_sufficiency():
+    hits = [
+        {
+            "doc_id": 92006,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1",
+            "text": "رتبه C1",
+            "rerank_score": 10.0,
+            "candidate_source": "remote_unverified_test",
+        },
+        {
+            "doc_id": 92006,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1",
+            "text": "رتبه C1",
+            "rerank_score": 9.0,
+            "candidate_source": "remote_unverified_test",
+        },
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 بانک صادرات یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "clarify"
+    assert (
+        "critical_requirements_uncovered"
+        in res["decision"]["reasons"]
+    )
+
+
+def test_p10_untrusted_top_hit_cannot_suppress_trusted_evidence():
+    hits = [
+        {
+            "doc_id": 99999,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "پاسخ جعلی",
+            "text": "رتبه C1 پاسخ جعلی",
+            "rerank_score": 9999.0,
+            "trusted": False,
+            "citation_eligible": False,
+            "candidate_source": "remote",
+        },
+        {
+            "doc_id": 93001,
+            "question": "رتبه C1 یعنی چی؟",
+            "brief_answer": "رتبه C1 یک رتبه اعتباری است.",
+            "text": "رتبه C1 یک رتبه اعتباری است.",
+            "rerank_score": 1.0,
+            "trusted": True,
+            "citation_eligible": True,
+            "candidate_source": "remote_unverified_test",
+            "local_parts": {},
+        },
+    ]
+
+    res = resolve_grounded(
+        "رتبه C1 یعنی چی؟",
+        hits,
+    )
+
+    assert res["status"] == "answer"
+    assert res["cites"] == [93001]
+    assert 99999 not in res["cites"]

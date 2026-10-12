@@ -507,3 +507,40 @@ Validation:
 
 Decision:
 FREEZE P3 semantic intent routing.
+
+---
+
+## P10 — Deterministic Evidence Sufficiency Gate
+
+Goal:
+Separate ranking from answerability. A highly ranked result is not sufficient
+unless evidence is trusted, covers critical semantic requirements, and has no
+hard semantic conflict.
+
+Implemented:
+- deterministic SufficiencyAssessment;
+- critical requirement coverage gate;
+- trusted/citation-eligible evidence requirement;
+- bank/rank/debt/quantity/polarity conflict gate;
+- resolver clarification on insufficient evidence;
+- trust-aware evidence selection so an untrusted high-score hit cannot
+  suppress a lower-ranked trusted source.
+
+Decision model:
+- ambiguity -> CLARIFY
+- no evidence -> CLARIFY
+- no trusted/citable evidence -> CLARIFY
+- critical requirement uncovered -> CLARIFY
+- hard semantic conflict -> CLARIFY
+- otherwise -> ANSWER
+
+Validation note:
+The full pytest invocation reported two CLI failures in bench/judge because the
+sealed remote retriever returned `RuntimeError: quota exceeded`.
+
+These are external retrieval-quota failures, not P10 logic failures.
+Network-dependent benchmark validation is deferred until retrieval quota is
+available.
+
+Offline P10 and core validation remain the release gate while the remote quota
+is unavailable.
