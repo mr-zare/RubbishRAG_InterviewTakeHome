@@ -1,12 +1,14 @@
 __pycache__/
 *.pyc
 .venv/
-traces/trace.jsonl
 traces/quota.json
 traces/metrics.json
-traces/submissions.jsonl
 submissions/*.zip
 server/hidden_eval.json
 server/server_index.json
 .candidate.json
 .DS_Store
+.venv311-test
+venv/
+.venv311-test/
+traces/*.jsonl
