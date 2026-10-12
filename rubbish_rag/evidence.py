@@ -349,8 +349,40 @@ def build_evidence_set(
                 else 0
             )
 
+            parts = hit.get(
+                "local_parts",
+                {},
+            )
+
+            conflict_values = {
+                "BANK_CONFLICT",
+                "RANK_CONFLICT",
+                "DEBT_CONFLICT",
+                "QUANTITY_CONFLICT",
+                "POLARITY_CONFLICT",
+            }
+
+            has_hard_conflict = (
+                isinstance(parts, dict)
+                and any(
+                    value in conflict_values
+                    for key, value
+                    in parts.items()
+                    if key.endswith(
+                        "_reason"
+                    )
+                )
+            )
+
+            consistency_priority = (
+                0
+                if has_hard_conflict
+                else 1
+            )
+
             key = (
                 provenance_priority,
+                consistency_priority,
                 adds if selected else 10_000,
                 float(
                     hit.get(

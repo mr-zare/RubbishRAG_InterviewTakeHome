@@ -577,3 +577,55 @@ responds to meaning-changing contrastive mutations.
 Decision:
 FREEZE the base P12 metamorphic suite.
 Extend robustness next with adversarial provenance and noise-defense tests.
+
+---
+
+## Elective F — Adversarial and Noise Defense
+
+Goal:
+Prevent retrieval-score manipulation, poisoned remote payloads, duplicate
+injection, and semantic-conflict injection from becoming grounded citations.
+
+Adversarial tests:
+- unknown remote document ID;
+- forged trusted/citation-eligible metadata;
+- keyword-stuffed unknown source;
+- valid document ID with tampered remote payload;
+- duplicate remote candidates for the same source;
+- high-score semantic conflict versus lower-score clean evidence;
+- conflicting-only evidence.
+
+Initial finding:
+The first adversarial run passed 5/6 tests.
+
+A high-score candidate marked as trusted but carrying a hard semantic conflict
+could suppress a lower-score trusted and semantically consistent candidate.
+
+Root cause:
+P10.1 evidence ordering preferred:
+  provenance -> coverage -> rerank score
+
+but did not prefer semantic consistency between equally trusted candidates.
+
+Change:
+Evidence selection now prefers:
+  trusted/citation-eligible
+  -> semantically consistent
+  -> requirement coverage
+  -> rerank score
+
+Validation:
+- Elective F targeted tests: 6/6 passed.
+- Full offline suite excluding network-dependent CLI tests: 82 passed.
+
+Security properties demonstrated:
+- unknown remote IDs cannot be cited;
+- externally supplied trust flags do not establish corpus trust;
+- known IDs are rehydrated from the trusted local corpus;
+- remote tampering is not propagated into cited content;
+- duplicate candidates do not duplicate source identity;
+- semantic-conflict score inflation cannot suppress clean trusted evidence;
+- conflicting-only evidence cannot produce an answer.
+
+Decision:
+FREEZE adversarial provenance/evidence-selection behavior.
