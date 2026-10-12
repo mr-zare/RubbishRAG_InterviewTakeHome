@@ -1,5 +1,34 @@
 # RubbishRAG — Engineering Proof
 
+
+<!-- FINAL-COMPLIANCE:METADATA -->
+
+## Submission Metadata and Declared Scope
+
+| Field | Value |
+|---|---|
+| Candidate | Erfan Zare |
+| GitHub | `@mr-zare` |
+| Submission branch | `solution/mr-zare` |
+| Submission date | 2026-10-12 |
+| Runtime | Python 3.11 |
+| Execution target | CPU-only, standard developer machine |
+| External model/API dependency | None |
+| Production Judge | OFF; deterministic P3/P9/P10 stack is authoritative |
+
+### Track Scope
+
+- [x] Required Core A — Retrieval characterization and diagnostic probing
+- [x] Required Core B — Hybrid retrieval / rank fusion and retrieval engineering
+- [x] Required Core C — Persian normalization and typed semantic extraction
+- [x] Required Core D — Structured chunking and metadata preservation
+- [x] Elective F — Adversarial / noise / provenance defense
+- [x] Elective G — Polarity and negation handling
+- [x] Staff Track — Adaptive System-1 Judge implemented and benchmarked
+- [ ] Elective H is not claimed as one of the two selected electives, although
+      deterministic clarification behavior exists in the production resolver.
+
+
 ## 1. Submission Summary
 
 This submission replaces a weak retrieval-first baseline with a deterministic,
@@ -390,3 +419,153 @@ The adaptive Judge remains experimental and production-OFF.
 The final implementation favors deterministic, explainable, reproducible
 behavior over adding an additional decision layer without demonstrated
 end-to-end benefit.
+
+<!-- FINAL-COMPLIANCE:EVIDENCE -->
+
+## Evaluator-Facing Evidence Index
+
+### Diagnostic Inventory
+
+The final `traces/trace.jsonl` contains:
+
+- **1022 valid trace rows**
+- **33 distinct diagnostic / benchmark queries**
+
+This exceeds the minimum diagnostic-probe requirement.
+
+The references below use the trace file line number because
+`rubbish.py inspect-trace <line>` can reproduce the corresponding logged
+retrieval event without issuing a new retrieval request.
+
+### Exact Trace References
+
+| Trace | Diagnostic purpose | Raw remote observation | Reproduce |
+|---:|---|---|---|
+| 1 | C1 rank / adversarial retrieval | poison-style doc `9004` ranked above trusted doc `106` | `python rubbish.py inspect-trace 1` |
+| 2 | colloquial tax-debt removal | doc `66` top-1 | `python rubbish.py inspect-trace 2` |
+| 4 | returned-check / 24-hour condition | doc `282` top-1 | `python rubbish.py inspect-trace 4` |
+| 5 | short numeric score explanation (`۴۸۰ شدم. چرا؟`) | doc `110` top-1 | `python rubbish.py inspect-trace 5` |
+| 7 | guarantor + delayed installments | doc `276` top-1 | `python rubbish.py inspect-trace 7` |
+| 8 | profitability / missing-score causal question | doc `266` top-1 | `python rubbish.py inspect-trace 8` |
+| 11 | colloquial returned-check removal | doc `47` top-1 | `python rubbish.py inspect-trace 11` |
+| 14 | exports/imports lexical ambiguity | doc `301` top-1; adversarial docs also retrieved | `python rubbish.py inspect-trace 14` |
+| 17 | C3 adversarial retrieval | doc `9004` top-1, trusted C3 doc `108` below it | `python rubbish.py inspect-trace 17` |
+| 18 | supplier-debt semantics | doc `65` top-1 | `python rubbish.py inspect-trace 18` |
+| 19 | paid tax debt + E3 removal | generic tax doc `173` top-1 | `python rubbish.py inspect-trace 19` |
+| 20 | no previous delay but not maximum score | doc `16` top-1 | `python rubbish.py inspect-trace 20` |
+| 22 | A2 adversarial retrieval | doc `9004` top-1, trusted A2 doc `101` second | `python rubbish.py inspect-trace 22` |
+| 90 | Arabic/Persian-character normalization variant | docs `165/166` retrieved identically | `python rubbish.py inspect-trace 90` |
+| 94 | formal export/import wording | doc `301` top-1 | `python rubbish.py inspect-trace 94` |
+| 95 | opposing-polarity export/import wording | retrieval order changes under negation | `python rubbish.py inspect-trace 95` |
+| 100 | intentionally underspecified debt query | mixed debt evidence retrieved | `python rubbish.py inspect-trace 100` |
+| 101 | Bank Saderat + E3 entity query | doc `303` top-1 | `python rubbish.py inspect-trace 101` |
+| 102 | Bank Melli + E3 contrast query | same generic doc `303` initially top-1 | `python rubbish.py inspect-trace 102` |
+
+These traces demonstrate why retrieval score alone cannot be treated as
+answer confidence: high-fused candidates may be adversarial, overly generic,
+entity-incompatible, polarity-incompatible, or simply less specific than
+trusted local evidence.
+
+### Baseline Retrieval Characterization
+
+The diagnostic probe suite measured the baseline retrieval behavior as:
+
+| Metric | Raw retrieval | Baseline reranker |
+|---|---:|---:|
+| Hit@1 | 5.88% | 0.00% |
+| Hit@3 | 41.18% | 29.41% |
+| Hit@5 | 47.06% | 47.06% |
+| MRR@5 | 0.2275 | 0.1755 |
+
+The baseline reranker improved **0** diagnostic cases, worsened **2**, and left
+**15** unchanged.
+
+This result motivated semantic reranking, provenance-aware candidate admission,
+and verified trusted-local recall recovery rather than further tuning raw fused
+score thresholds.
+
+### Final Named Network Checkpoint
+
+The last explicitly named network checkpoint before retrieval quota exhaustion
+was P3.1:
+
+| Metric | P3.1 |
+|---|---:|
+| Visible accuracy | 100% |
+| Mean latency | 60.2 ms |
+| P50 latency | 53.4 ms |
+| P95 latency | 96.8 ms |
+
+Post-P3.1 hardening was validated offline and is **not** presented as a new
+remote benchmark measurement.
+
+### Elective F — Adversarial / Provenance Result
+
+Targeted adversarial tests cover:
+
+- unknown remote IDs;
+- keyword stuffing;
+- forged high scores;
+- trusted-ID content tampering;
+- duplicate evidence;
+- semantically conflicting evidence;
+- low-ID untrusted candidates;
+- high-ID trusted candidates.
+
+Observed targeted-suite result:
+
+- **untrusted / poison citation rate: 0%**
+- magic numeric document-ID trust rules: **0 remaining**
+
+Trust is determined by provenance and trusted-corpus membership, not document
+number ranges or retrieval score.
+
+### Elective G — Polarity / Negation Result
+
+Final targeted polarity suite:
+
+- **18 / 18 passed**
+- opposing-polarity evidence accepted as citation in covered regression cases:
+  **0**
+
+The parser distinguishes proposition existence from predicate effect polarity
+and scopes negation to the relevant clause/target.
+
+### Staff Track — Adaptive Judge Benchmark
+
+The Staff Track Judge was measured on the provided test split:
+
+| Metric | Result |
+|---|---:|
+| Total queries | 15 |
+| Routing Accuracy | 93.3% |
+| Clarify Precision | 66.7% |
+| Clarify Recall | 66.7% |
+| Clarify F1 | 0.667 |
+| Mean Dynamic top-k | 3.4 |
+| Fixed baseline top-k | 5 |
+| Context Token Savings | 32.0% |
+| Brier Score | 0.0624 |
+| Expected Calibration Error | 0.022 |
+
+Despite the positive routing and budget results, the production pipeline keeps
+the Judge **OFF** because P3/P9/P10 already provide deterministic semantic
+understanding, trusted evidence construction, and sufficiency decisions.
+
+P11 therefore remains an experimentally validated adaptive-budget layer rather
+than an additional production authority.
+
+### Final Offline Reproducibility
+
+Final validation:
+
+- offline regression suite: **119 / 119**
+- three independent cold-process runs: **119 / 119 each**
+- clean detached Git worktree: **119 / 119**
+- submission packaging test: PASS
+- packaged production modules: compile successfully
+- archive secret scan: PASS
+- archive source-integrity scan: PASS
+
+Network-dependent CLI tests were not re-run after retrieval quota exhaustion.
+No test was modified or bypassed to hide the quota limitation.

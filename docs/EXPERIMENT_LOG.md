@@ -986,3 +986,74 @@ historical named network snapshots are reported separately.
 
 Decision:
 FREEZE H6 after final archive integrity and secret scan pass.
+
+<!-- FINAL-EVIDENCE-COMPLIANCE -->
+
+---
+
+## Final Evidence Compliance and Staff Benchmark
+
+### Trace inventory
+
+The final runtime trace contained:
+
+- 1022 valid JSONL retrieval rows;
+- 33 distinct queries.
+
+The final `docs/PROOF.md` now references more than fifteen exact trace line
+numbers and provides corresponding `rubbish.py inspect-trace <line>` commands.
+
+This closes the evaluator-facing traceability requirement without issuing new
+retrieval calls.
+
+### Staff Track benchmark
+
+Command:
+
+    python rubbish.py judge-bench --split test
+
+Measured result:
+
+- Total queries: 15
+- Routing accuracy: 93.3%
+- Clarify precision: 66.7%
+- Clarify recall: 66.7%
+- Clarify F1: 0.667
+- Mean dynamic top-k: 3.4
+- Fixed baseline top-k: 5
+- Context token savings: 32.0%
+- Brier score: 0.0624
+- Expected calibration error: 0.022
+
+Interpretation:
+
+The Judge demonstrates useful routing and context-budget behavior, but remains
+production-OFF. The deterministic P3/P9/P10 stack continues to own semantic
+interpretation, evidence trust, and answerability.
+
+### Final scope
+
+Declared electives:
+
+- F — adversarial / provenance defense;
+- G — polarity / negation.
+
+The clarification capability implemented by the production resolver is treated
+as additional functionality rather than claiming a third elective.
+
+### Validation boundary
+
+The remote retrieval quota was exhausted before the final hardening stages.
+
+No post-hardening network score is invented or inferred.
+
+The final report therefore separates:
+
+1. historical named network checkpoints;
+2. final offline robustness / determinism validation;
+3. Staff Judge benchmark results, which do not consume remote retrieval quota.
+
+Decision:
+
+FINALIZE documentation and package. No further production-code modification is
+required.
