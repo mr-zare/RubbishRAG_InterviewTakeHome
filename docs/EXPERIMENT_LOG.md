@@ -544,3 +544,36 @@ available.
 
 Offline P10 and core validation remain the release gate while the remote quota
 is unavailable.
+
+---
+
+## P12 — Metamorphic and Contrastive Robustness
+
+Goal:
+Test semantic invariants and contrastive mutations independently of the
+visible benchmark.
+
+Implemented properties:
+- Arabic/Persian character normalization invariance;
+- Persian/ASCII digit invariance;
+- ZWNJ/space normalization invariance;
+- bank entity preservation under script variants;
+- credit-score preservation under digit variants;
+- late-payment paraphrase intent invariance;
+- polarity reversal detection;
+- rank-swap conflict detection;
+- bank-swap conflict detection;
+- exact-question anchor invariance under normalized digits;
+- deterministic semantic parsing.
+
+Validation:
+- P12 targeted tests: 11/11 passed.
+- Full offline suite excluding network-dependent CLI tests: 76 passed.
+
+Interpretation:
+The current semantic pipeline preserves the tested benign transformations and
+responds to meaning-changing contrastive mutations.
+
+Decision:
+FREEZE the base P12 metamorphic suite.
+Extend robustness next with adversarial provenance and noise-defense tests.
