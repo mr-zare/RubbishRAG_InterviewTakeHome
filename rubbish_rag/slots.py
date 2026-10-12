@@ -330,24 +330,121 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
     return Intent.GENERAL_INFO
 
 
-def _propositions(text: str, debts: list[EntityMention]) -> list[Proposition]:
-    # Clause-aware, deterministic scope approximation. This is intentionally
-    # conservative: UNKNOWN is preferable to assigning negation to the wrong concept.
-    clauses = [c.strip() for c in re.split(r"(?:\bولی\b|\bاما\b|[؛;.!?؟])", text) if c.strip()]
-    result: list[Proposition] = []
-    for clause in clauses:
-        is_neg = any(cue in clause for cue in _NEGATION_CUES)
-        is_question = any(cue in clause for cue in ("آیا", "چه تاثیری", "چه تأثیری", "موثره", "موثر است", "تاثیر دارد"))
-        polarity = Polarity.NEGATIVE if is_neg else (Polarity.UNKNOWN if is_question else Polarity.POSITIVE)
-        matched_debts = [d for d in debts if d.canonical_value in clause or d.raw_text in clause]
-        for debt in matched_debts:
-            cue = next((x for x in _NEGATION_CUES if x in clause), None)
-            result.append(Proposition(concept=f"DEBT:{debt.canonical_value}", polarity=polarity, cue=cue))
+_INTERROGATIVE_CUES = (
+    "آیا",
+    "چرا",
+    "چطور",
+    "چگونه",
+    "چه تاثیری",
+    "چه تأثیری",
+    "چه اتفاق",
+    "چه می شود",
+    "چه می‌شود",
+    "چی میشه",
+    "چی می شود",
+    "چی می‌شود",
+)
 
-        # Generic effect proposition for polarity track.
-        if any(x in clause for x in _EFFECT_CUES):
-            cue = next((x for x in _NEGATION_CUES if x in clause), None)
-            result.append(Proposition(concept="EFFECT", polarity=polarity, cue=cue))
+
+def _is_interrogative(
+    original_text: str,
+    canonical_text: str,
+    match_text: str,
+) -> bool:
+    """Detect question semantics before match normalization removes punctuation."""
+
+    surface = f"{original_text} {canonical_text}"
+
+    if "؟" in surface or "?" in surface:
+        return True
+
+    return any(
+        cue in match_text
+        for cue in _INTERROGATIVE_CUES
+    )
+
+
+def _propositions(
+    text: str,
+    debts: list[EntityMention],
+    *,
+    interrogative: bool = False,
+) -> list[Proposition]:
+    """Extract scoped proposition polarity.
+
+    Explicit negation is stronger than interrogative status:
+      تاثیر دارد.   -> POSITIVE
+      تاثیر ندارد.  -> NEGATIVE
+      تاثیر دارد؟   -> UNKNOWN
+      تاثیر ندارد؟  -> NEGATIVE
+    """
+
+    clauses = [
+        c.strip()
+        for c in re.split(
+            r"(?:\bولی\b|\bاما\b|[؛;.!?؟])",
+            text,
+        )
+        if c.strip()
+    ]
+
+    result: list[Proposition] = []
+
+    for clause in clauses:
+        is_neg = any(
+            cue in clause
+            for cue in _NEGATION_CUES
+        )
+
+        clause_is_question = (
+            interrogative
+            or any(
+                cue in clause
+                for cue in _INTERROGATIVE_CUES
+            )
+        )
+
+        if is_neg:
+            polarity = Polarity.NEGATIVE
+        elif clause_is_question:
+            polarity = Polarity.UNKNOWN
+        else:
+            polarity = Polarity.POSITIVE
+
+        cue = next(
+            (
+                x
+                for x in _NEGATION_CUES
+                if x in clause
+            ),
+            None,
+        )
+
+        for debt in debts:
+            if (
+                debt.canonical_value in clause
+                or debt.raw_text in clause
+            ):
+                result.append(
+                    Proposition(
+                        concept=f"DEBT:{debt.canonical_value}",
+                        polarity=polarity,
+                        cue=cue,
+                    )
+                )
+
+        if any(
+            effect_cue in clause
+            for effect_cue in _EFFECT_CUES
+        ):
+            result.append(
+                Proposition(
+                    concept="EFFECT",
+                    polarity=polarity,
+                    cue=cue,
+                )
+            )
+
     return result
 
 
@@ -390,7 +487,17 @@ def parse_query(query: str | None) -> QuerySemanticFrame:
     entities_count = len(banks) + len(ranks) + len(personas) + len(debts)
     relation = _relation(text, entities_count)
     intent = _intent(text, ranks, debts, quantities)
-    propositions = _propositions(text, debts)
+    interrogative = _is_interrogative(
+        norm_result.original_text,
+        norm_result.canonical_text,
+        text,
+    )
+
+    propositions = _propositions(
+        text,
+        debts,
+        interrogative=interrogative,
+    )
     ambiguity = _ambiguity(intent, text, debts, ranks)
 
     return QuerySemanticFrame(

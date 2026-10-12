@@ -135,3 +135,48 @@ def test_tax_payment_e3_remains_debt_removal():
     )
 
     assert frame.intent is Intent.DEBT_REMOVAL
+
+
+def test_positive_declarative_effect_has_positive_polarity():
+    frame = parse_query(
+        "بدهی مالیاتی روی امتیاز تاثیر دارد."
+    )
+
+    effect = [
+        p
+        for p in frame.propositions
+        if p.concept == "EFFECT"
+    ]
+
+    assert effect
+    assert effect[0].polarity is Polarity.POSITIVE
+
+
+def test_negative_declarative_effect_has_negative_polarity():
+    frame = parse_query(
+        "بدهی مالیاتی روی امتیاز تاثیر ندارد."
+    )
+
+    effect = [
+        p
+        for p in frame.propositions
+        if p.concept == "EFFECT"
+    ]
+
+    assert effect
+    assert effect[0].polarity is Polarity.NEGATIVE
+
+
+def test_interrogative_effect_has_unknown_polarity():
+    frame = parse_query(
+        "بدهی مالیاتی روی امتیاز تاثیر دارد؟"
+    )
+
+    effect = [
+        p
+        for p in frame.propositions
+        if p.concept == "EFFECT"
+    ]
+
+    assert effect
+    assert effect[0].polarity is Polarity.UNKNOWN

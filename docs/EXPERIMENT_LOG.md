@@ -366,3 +366,113 @@ Decision:
 FREEZE visible-ranking behavior at Core v1.5.
 Do not optimize further against the visible benchmark.
 Next priority: polarity robustness before hard sufficiency enforcement.
+
+---
+
+## Core v1.6B — Surface-Aware Polarity, Partial Success
+
+Goal:
+Separate question polarity from answer polarity and preserve interrogative
+semantics before match normalization removes punctuation.
+
+Successful validation:
+- Focused polarity tests: 5/5 passed.
+- Full regression suite: 57/57 passed.
+- Truth table:
+  - positive declarative -> POSITIVE
+  - negative declarative -> NEGATIVE
+  - positive interrogative -> UNKNOWN
+  - interrogative without punctuation -> UNKNOWN
+  - explicit negation inside question -> NEGATIVE
+
+Remaining regression:
+- Visible benchmark: 19/20 = 95%.
+- Failing case: v5.
+- v5 contains a declarative/conditional premise followed by an interrogative
+  effect clause.
+
+Current hypothesis:
+Interrogative status is still query-global. This may incorrectly mark premise
+propositions as UNKNOWN. Polarity/questionhood likely needs clause-level scope.
+
+Performance:
+Repeated benchmark runs showed significant variance.
+Latest three p95 values:
+- 139.2 ms
+- 102.3 ms
+- 127.2 ms
+
+Median p95: 127.2 ms.
+
+Decision:
+KEEP the question-anchored polarity architecture and surface-aware question
+detection, but DO NOT freeze v1.6 yet.
+Investigate clause-level polarity scope and the v5 regression first.
+
+---
+
+## Core v1.6C — Candidate Inclusion Diagnosis
+
+v5 diagnosis disproved the earlier hypothesis that clause-level polarity was
+the immediate cause of the visible regression.
+
+Observed:
+- Gold doc 9 is local verified rank 1.
+- Gold local score: 12.0.
+- Exact FAQ-question contribution: +3.0.
+- No polarity conflict exists for the gold source.
+- Despite this, the end-to-end candidate set does not contain doc 9.
+- The resolver therefore selects remote doc 299.
+
+Root cause:
+The exact-question feature currently exists only in the reranking score.
+It has no effect if the trusted exact FAQ document is never admitted into the
+candidate set.
+
+Architectural consequence:
+High-confidence source anchors must participate in candidate generation, not
+only candidate scoring.
+
+Decision:
+Add an O(1) normalized FAQ-question index. A trusted exact FAQ match is always
+admitted as a candidate. Full local backfill remains conditional for
+non-exact/paraphrased queries.
+
+---
+
+## Core v1.6C — Exact Trusted FAQ Candidate Anchor
+
+Hypothesis:
+A source-specificity feature in the reranker cannot help when the corresponding
+trusted FAQ document never enters the candidate set.
+
+Observed before the change:
+- v5 gold doc 9 was verified-local rank 1.
+- Gold score: 12.0.
+- Exact-question contribution: +3.0.
+- No polarity conflict was present.
+- Nevertheless, doc 9 was absent from the end-to-end candidate set.
+- Remote doc 299 was selected instead.
+
+Change:
+- Added an O(1) normalized trusted FAQ-question index.
+- Exact trusted FAQ matches are admitted directly into the candidate set.
+- Exact matching remains content-based and independent of benchmark IDs.
+- Full verified-local backfill remains conditional for non-exact queries.
+- Added a regression test for candidate-generation anchoring.
+
+Validation:
+- Tests: 58/58 passed.
+- v5 now admits doc 9 and cites doc 9.
+- Visible benchmark: 20/20 = 100%.
+- Single-run mean latency: 43.1 ms.
+- Single-run p95 latency: 48.6 ms.
+
+Architectural lesson:
+High-specificity retrieval signals must participate in candidate generation,
+not only final reranking. A perfect scorer cannot recover a source that was
+never admitted into the candidate pool.
+
+Decision:
+FREEZE candidate-generation behavior.
+Do not further optimize against the visible benchmark.

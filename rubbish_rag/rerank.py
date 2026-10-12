@@ -103,6 +103,31 @@ def _polarity_compat(qf: QuerySemanticFrame, df: QuerySemanticFrame) -> tuple[fl
     return score, status
 
 
+def _question_frame(
+    record: CorpusRecord,
+    registry: TrustedCorpusRegistry | None = None,
+) -> QuerySemanticFrame:
+    """Semantic frame of the human-written FAQ question only.
+
+    Polarity matching must use this surface rather than the concatenated
+    question+answer representation. An answer often resolves or negates the
+    proposition asked by the question and must not create a false polarity
+    conflict during retrieval.
+    """
+    if (
+        registry is not None
+        and record.source_doc_id in registry.question_frames
+    ):
+        return registry.question_frames[record.source_doc_id]
+
+    frame = parse_query(record.question)
+
+    if registry is not None:
+        registry.question_frames[record.source_doc_id] = frame
+
+    return frame
+
+
 def _document_frame(record: CorpusRecord, registry: TrustedCorpusRegistry | None = None) -> QuerySemanticFrame:
     if registry is not None and record.source_doc_id in registry.document_frames:
         return registry.document_frames[record.source_doc_id]
@@ -186,7 +211,14 @@ def score_record(query: str, qf: QuerySemanticFrame, record: CorpusRecord, *, pr
     if qstatus:
         contributions["quantity_reason"] = qstatus
 
-    pscore, pstatus = _polarity_compat(qf, df)
+    polarity_frame = _question_frame(
+        record,
+        registry,
+    )
+    pscore, pstatus = _polarity_compat(
+        qf,
+        polarity_frame,
+    )
     score += pscore
     contributions["polarity"] = pscore
     if pstatus:
@@ -231,6 +263,8 @@ _LOCAL_QUANTITY_POSTINGS: dict[
     set[int],
 ] = {}
 
+_LOCAL_EXACT_QUESTION_POSTINGS: dict[str, set[int]] = {}
+
 
 def _quantity_posting_key(quantity):
     if quantity.value is None:
@@ -258,11 +292,22 @@ def _build_local_candidate_indexes(
     _LOCAL_INTENT_POSTINGS.clear()
     _LOCAL_ENTITY_POSTINGS.clear()
     _LOCAL_QUANTITY_POSTINGS.clear()
+    _LOCAL_EXACT_QUESTION_POSTINGS.clear()
 
     _build_token_df(registry)
 
     for doc_id, record in registry.records.items():
         frame = _document_frame(record, registry)
+
+        normalized_question = normalize_match_text(
+            record.question
+        )
+
+        if normalized_question:
+            _LOCAL_EXACT_QUESTION_POSTINGS.setdefault(
+                normalized_question,
+                set(),
+            ).add(doc_id)
 
         for token in registry.tokens_by_doc.get(
             doc_id,
@@ -490,6 +535,10 @@ def prepare_reranker() -> None:
             record,
             registry,
         )
+        _question_frame(
+            record,
+            registry,
+        )
 
     _build_local_candidate_indexes(
         registry,
@@ -626,6 +675,85 @@ def local_verified_search(
     return results
 
 
+def _verified_exact_question_hits(
+    query: str,
+    qf: QuerySemanticFrame,
+    registry: TrustedCorpusRegistry,
+) -> list[dict[str, Any]]:
+    """Return trusted FAQ records whose normalized question exactly matches.
+
+    This is a high-specificity source anchor, not a benchmark shortcut.
+    It operates only on the trusted local corpus and is independent of
+    document IDs or expected answers.
+    """
+    if not registry.records:
+        return []
+
+    _build_local_candidate_indexes(
+        registry,
+    )
+
+    key = normalize_match_text(query)
+
+    if not key:
+        return []
+
+    doc_ids = sorted(
+        _LOCAL_EXACT_QUESTION_POSTINGS.get(
+            key,
+            (),
+        )
+    )
+
+    results: list[dict[str, Any]] = []
+
+    for local_rank, doc_id in enumerate(
+        doc_ids,
+        start=1,
+    ):
+        record = registry.records[doc_id]
+
+        score, parts = score_record(
+            query,
+            qf,
+            record,
+            prior=0.0,
+            registry=registry,
+        )
+
+        results.append(
+            {
+                "doc_id": doc_id,
+                "text": (
+                    record.answer
+                    or record.brief_answer
+                ),
+                "category": record.category,
+                "question": record.question,
+                "brief_answer": record.brief_answer,
+                "keyword": record.keyword,
+                "bm25": 0.0,
+                "dense": 0.0,
+                "fused": 0.0,
+                "server_fused": 0.0,
+                "local_retrieval_score": score,
+                "local_rank": local_rank,
+                "candidate_source": (
+                    "verified_exact_question"
+                ),
+                "trusted": True,
+                "citation_eligible": True,
+                "provenance_status": (
+                    "VERIFIED_LOCAL_EXACT"
+                ),
+                "local_parts": parts,
+                "exact_question_anchor": True,
+            }
+        )
+
+    return results
+
+
 def _candidate_satisfies_query_frame(
     query: str,
     qf: QuerySemanticFrame,
@@ -670,7 +798,16 @@ def _candidate_satisfies_query_frame(
         if quantity_score <= 0:
             return False
 
-    polarity_score, _ = _polarity_compat(qf, df)
+    polarity_frame = _question_frame(
+        record,
+        registry,
+    )
+
+    polarity_score, _ = _polarity_compat(
+        qf,
+        polarity_frame,
+    )
+
     if polarity_score < 0:
         return False
 
@@ -772,10 +909,35 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
         for hit in fused
     )
 
+    exact_hits = _verified_exact_question_hits(
+        query,
+        qf,
+        registry,
+    )
+
+    for exact in exact_hits:
+        doc_id = int(exact["doc_id"])
+
+        if doc_id not in candidates:
+            candidates[doc_id] = exact
+        else:
+            candidates[doc_id][
+                "exact_question_anchor"
+            ] = True
+            candidates[doc_id][
+                "local_retrieval_score"
+            ] = exact[
+                "local_retrieval_score"
+            ]
+            candidates[doc_id][
+                "local_parts"
+            ] = exact["local_parts"]
+
     should_backfill = (
         enable_local_backfill
         and registry.records
         and had_real_remote
+        and not exact_hits
         and _needs_verified_backfill(
             query,
             qf,

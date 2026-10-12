@@ -45,6 +45,7 @@ class TrustedCorpusRegistry:
     tokens_by_doc: dict[int, frozenset[str]] = field(default_factory=dict)
     question_tokens: dict[int, frozenset[str]] = field(default_factory=dict)
     document_frames: dict[int, Any] = field(default_factory=dict)
+    question_frames: dict[int, Any] = field(default_factory=dict)
 
     @classmethod
     def from_csv(cls, path: str | Path) -> "TrustedCorpusRegistry":

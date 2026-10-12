@@ -134,3 +134,111 @@ def test_exact_faq_question_gets_specificity_bonus():
     assert exact_parts["question_exact_match"] == 3.0
     assert related_parts["question_exact_match"] == 0.0
     assert exact_score > related_score
+
+
+def test_exact_faq_question_cannot_conflict_with_its_own_polarity():
+    from rubbish_rag.corpus import CorpusRecord
+    from rubbish_rag.rerank import score_record
+    from rubbish_rag.slots import parse_query
+
+    query = (
+        "اگر بدهی مالیاتی پرداخت نشده را پرداخت کنم "
+        "چه اتفاقی می افتد؟"
+    )
+
+    record = CorpusRecord(
+        source_doc_id=91001,
+        question=query,
+        category="test",
+        brief_answer=(
+            "پس از پرداخت، این بدهی دیگر تاثیری "
+            "در امتیاز نخواهد داشت."
+        ),
+        answer=(
+            "پس از پرداخت، اثر منفی بدهی حذف می‌شود."
+        ),
+        keyword="بدهی مالیاتی پرداخت نشده",
+        source_row_hash="polarity-self-match",
+    )
+
+    score, parts = score_record(
+        query,
+        parse_query(query),
+        record,
+        registry=None,
+    )
+
+    assert parts.get("polarity_reason") != "POLARITY_CONFLICT"
+    assert float(parts.get("polarity", 0.0)) >= 0.0
+
+
+def test_opposite_declarative_polarity_is_penalized():
+    from rubbish_rag.corpus import CorpusRecord
+    from rubbish_rag.rerank import score_record
+    from rubbish_rag.slots import parse_query
+
+    query = "بدهی مالیاتی روی امتیاز تاثیر ندارد."
+
+    record = CorpusRecord(
+        source_doc_id=91002,
+        question="بدهی مالیاتی روی امتیاز تاثیر دارد.",
+        category="test",
+        brief_answer="پاسخ تست",
+        answer="پاسخ تست",
+        keyword="بدهی مالیاتی",
+        source_row_hash="polarity-opposite",
+    )
+
+    score, parts = score_record(
+        query,
+        parse_query(query),
+        record,
+        registry=None,
+    )
+
+    assert parts.get("polarity_reason") == "POLARITY_CONFLICT"
+    assert float(parts["polarity"]) < 0.0
+
+
+def test_exact_trusted_faq_is_candidate_generation_anchor():
+    from rubbish_rag.corpus import get_registry
+    from rubbish_rag.rerank import (
+        _verified_exact_question_hits,
+        prepare_reranker,
+    )
+    from rubbish_rag.slots import parse_query
+
+    prepare_reranker()
+    registry = get_registry()
+
+    record = next(
+        r
+        for r in registry.records.values()
+        if r.question.strip()
+    )
+
+    hits = _verified_exact_question_hits(
+        record.question,
+        parse_query(record.question),
+        registry,
+    )
+
+    assert hits
+    assert any(
+        hit["doc_id"] == record.source_doc_id
+        for hit in hits
+    )
+
+    matching = [
+        hit
+        for hit in hits
+        if hit["doc_id"] == record.source_doc_id
+    ][0]
+
+    assert matching["trusted"] is True
+    assert matching["citation_eligible"] is True
+    assert (
+        matching["candidate_source"]
+        == "verified_exact_question"
+    )
+    assert matching["exact_question_anchor"] is True
