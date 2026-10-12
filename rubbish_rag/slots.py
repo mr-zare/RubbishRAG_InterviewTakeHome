@@ -297,10 +297,80 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
         return Intent.DEFINE_RANK
     if any(q.quantity_type is QuantityType.CREDIT_SCORE for q in quantities) and any(w in text for w in ("چرا", "علت", "افت", "کم", "پایین", "شدم", "شده")):
         return Intent.EXPLAIN_SCORE
-    if debts and any(w in text for w in _REMOVAL_CUES):
-        return Intent.DEBT_REMOVAL
-    if debts and (any(w in text for w in _EFFECT_CUES) or "چه اتفاق" in text or "چی میشه" in text or "چی می شود" in text):
-        return Intent.DEBT_EFFECT
+    if debts:
+        # Intent must follow the user's information need, not merely the
+        # presence of words such as "پرداخت".
+        #
+        # Examples:
+        #   "با تاخیر پرداخت کردم؛ آیا تاخیر اثر دارد؟" -> DEBT_EFFECT
+        #   "بدهی را پرداخت کنم چه اتفاقی می افتد؟"     -> DEBT_REMOVAL
+
+        has_effect_focus = any(
+            cue in text
+            for cue in _EFFECT_CUES
+        )
+
+        strong_removal_focus = any(
+            cue in text
+            for cue in (
+                "حذف",
+                "پاک",
+                "رفع",
+                "تسویه",
+            )
+        )
+
+        payment_event = any(
+            cue in text
+            for cue in (
+                "پرداخت کنم",
+                "پرداخت کردم",
+                "پرداخت شود",
+                "پرداخت بشود",
+                "پرداخت بشه",
+            )
+        )
+
+        post_payment_outcome = any(
+            cue in text
+            for cue in (
+                "چه اتفاق",
+                "چه می شود",
+                "چه می‌شود",
+                "چی میشه",
+                "چی می شود",
+                "چی می‌شود",
+                "چه زمانی",
+                "چقدر زمان",
+                "بعد از",
+                "پس از",
+            )
+        )
+
+        # Explicit effect questions take precedence over incidental payment
+        # words. This prevents "paid late" from becoming a removal intent.
+        if has_effect_focus:
+            return Intent.DEBT_EFFECT
+
+        if (
+            strong_removal_focus
+            or (
+                payment_event
+                and post_payment_outcome
+            )
+        ):
+            return Intent.DEBT_REMOVAL
+
+        if any(
+            cue in text
+            for cue in (
+                "چه اتفاق",
+                "چی میشه",
+                "چی می شود",
+                "چی می‌شود",
+            )
+        ):
+            return Intent.DEBT_EFFECT
     # Generic debt mentions are intentionally routed to a debt intent so the
     # ambiguity gate can ask for the missing subtype instead of guessing.
     if "بدهی" in text and not debts:

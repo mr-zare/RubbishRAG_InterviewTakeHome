@@ -476,3 +476,34 @@ never admitted into the candidate pool.
 Decision:
 FREEZE candidate-generation behavior.
 Do not further optimize against the visible benchmark.
+
+---
+
+## P3.1 — Intent Focus Routing
+
+Problem:
+Debt-related queries containing generic payment words were over-classified as
+DEBT_REMOVAL, even when the user's actual information need was the effect of
+late payment on credit score/rank.
+
+Change:
+- Intent selection now prioritizes explicit effect focus over incidental
+  payment/removal vocabulary.
+- Strong removal semantics remain DEBT_REMOVAL.
+- Late-payment effect questions are routed to DEBT_EFFECT.
+
+Validation:
+- Tests: 63/63 passed.
+- Intent truth-set:
+  - paid tax debt + removal timing -> DEBT_REMOVAL
+  - tax settlement outcome -> DEBT_REMOVAL
+  - late installment + score effect -> DEBT_EFFECT
+  - late then settled + rank effect -> DEBT_EFFECT
+  - tax debt + score effect -> DEBT_EFFECT
+- Visible benchmark: 20/20 = 100%.
+- Mean latency: 60.2 ms.
+- P50 latency: 53.4 ms.
+- P95 latency: 96.8 ms.
+
+Decision:
+FREEZE P3 semantic intent routing.

@@ -180,3 +180,47 @@ def test_interrogative_effect_has_unknown_polarity():
 
     assert effect
     assert effect[0].polarity is Polarity.UNKNOWN
+
+
+def test_paid_tax_debt_removal_intent():
+    frame = parse_query(
+        "بدهی مالیاتی را پرداخت کردم، "
+        "چه زمانی از گزارش حذف می‌شود؟"
+    )
+
+    assert frame.intent is Intent.DEBT_REMOVAL
+
+
+def test_tax_settlement_outcome_is_removal_intent():
+    frame = parse_query(
+        "اگر بدهی مالیاتی را تسویه کنم "
+        "چه اتفاقی می‌افتد؟"
+    )
+
+    assert frame.intent is Intent.DEBT_REMOVAL
+
+
+def test_late_installment_effect_is_not_removal():
+    frame = parse_query(
+        "اقساط را با تأخیر پرداخت کردم؛ "
+        "آیا این تأخیر روی امتیاز اثر دارد؟"
+    )
+
+    assert frame.intent is Intent.DEBT_EFFECT
+
+
+def test_late_then_settled_still_focuses_on_delay_effect():
+    frame = parse_query(
+        "اگر قسط دیر پرداخت شود ولی بعدا تسویه شود، "
+        "آیا تاخیر روی رتبه اثر دارد؟"
+    )
+
+    assert frame.intent is Intent.DEBT_EFFECT
+
+
+def test_plain_tax_debt_effect_intent():
+    frame = parse_query(
+        "بدهی مالیاتی روی امتیاز تاثیر دارد؟"
+    )
+
+    assert frame.intent is Intent.DEBT_EFFECT
