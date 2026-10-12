@@ -852,3 +852,137 @@ The hardening suite checks:
 Decision:
 FREEZE H1-H3 after targeted, full offline, cold-process, and static-audit
 validation pass.
+
+---
+
+## H4 — Reproducible Experiment Evidence
+
+Goal:
+Preserve the scientific experiment history without committing mutable runtime
+state.
+
+Changes:
+- committed named immutable `metrics_*.json` snapshots;
+- retained rejected/aborted experiment metrics as negative evidence;
+- committed diagnostic plots;
+- added `traces/README.md` describing metric provenance;
+- excluded mutable runtime JSONL traces and live `metrics.json` from normal Git
+  evidence tracking.
+
+Historical benchmark evidence is therefore tied to named snapshots rather than
+the mutable latest-run file.
+
+Validation:
+- packaging test passed;
+- full offline suite remained 119/119;
+- artifact secret scan found no credentials.
+
+Decision:
+FREEZE H4.
+
+---
+
+## H5 — Clean-Worktree Reproducibility
+
+Goal:
+Verify that successful execution does not depend on untracked files, generated
+runtime state, or a warmed working directory.
+
+Method:
+A detached Git worktree was created directly from committed HEAD.
+
+Validation inside that clean worktree:
+- all `rubbish_rag/*.py` files compiled successfully;
+- offline suite: 119/119 passed;
+- packaging test: passed.
+
+The test run created only expected generated/cache artifacts and a generated
+README report-card timestamp update.
+
+Conclusion:
+The implementation is reproducible from committed repository state and does
+not depend on local untracked experiment artifacts.
+
+Decision:
+FREEZE H5.
+
+---
+
+## H6 — Final Submission Packaging Validation
+
+Goal:
+Validate the exact submission artifact produced by the official `bastesh`
+packaging path.
+
+### Initial packaging finding
+
+The first final packaging attempt reported:
+
+    Warning: no docs/PROOF.md found — packed template instead.
+
+This was treated as a release blocker.
+
+A real `docs/PROOF.md` was written with:
+- baseline metrics;
+- architecture;
+- experiment progression;
+- accepted and rejected hypotheses;
+- Elective F adversarial validation;
+- Elective G polarity validation;
+- P11 ablation;
+- final hardening;
+- reproducibility evidence;
+- explicit validation boundaries.
+
+The completed proof contained no TODO/TBD/template placeholders.
+
+### Packaging contract inspection
+
+Inspection of `rubbish.py` established that the official packager intentionally
+includes:
+- `traces/trace.jsonl`;
+- `traces/metrics.json`;
+- `.candidate.json`;
+- `server/visible_bench.json`;
+- diagnostic plots;
+- `docs/PROOF.md`;
+- `manifest.json`.
+
+These files are therefore part of the official package contract and are not
+treated as accidental archive leakage.
+
+### Corrected archive validation
+
+An earlier attempted archive regression accidentally executed the test suite
+from the source repository because the submission ZIP intentionally does not
+contain `rubbish.py` or the test suite.
+
+That result was discarded as archive-level evidence.
+
+The corrected validation extracted the ZIP directly and compiled the packaged
+`rubbish_rag/*.py` modules from the extracted directory.
+
+Result:
+PASS.
+
+### Final pre-package regression
+
+Immediately before the final package:
+- offline suite: 119/119 passed;
+- packaging test: passed.
+
+### Final package
+
+The final package contains the completed `docs/PROOF.md`.
+
+Final ZIP SHA-256:
+
+    8f596ab3702a0eeecd168f149797f8f8f9132abaa0e8d9fb6eaa5923202633b3
+
+Validation boundary:
+The final hardening stages were not followed by another remote benchmark
+because remote retrieval quota was unavailable. Offline robustness results and
+historical named network snapshots are reported separately.
+
+Decision:
+FREEZE H6 after final archive integrity and secret scan pass.
