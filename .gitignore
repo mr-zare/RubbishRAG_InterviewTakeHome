@@ -12,3 +12,4 @@ server/server_index.json
 venv/
 .venv311-test/
 traces/*.jsonl
+.pytest_cache/
