@@ -357,3 +357,69 @@ def test_g_unpaid_event_does_not_negate_positive_effect():
             "EFFECT",
         )
     )
+
+
+def test_g_effect_verb_does_not_assert_debt_existence_in_question():
+    frame = parse_query(
+        "آیا چک برگشتی روی امتیاز تاثیر دارد؟"
+    )
+
+    assert (
+        Polarity.UNKNOWN
+        in _polarities(
+            frame,
+            "DEBT:چک",
+        )
+    )
+
+    assert (
+        Polarity.UNKNOWN
+        in _polarities(
+            frame,
+            "EFFECT",
+        )
+    )
+
+
+def test_g_effect_negation_does_not_negate_debt_existence():
+    frame = parse_query(
+        "بدهی مالیاتی روی امتیاز تاثیر ندارد."
+    )
+
+    assert (
+        Polarity.POSITIVE
+        in _polarities(
+            frame,
+            "DEBT:مالیاتی",
+        )
+    )
+
+    assert (
+        Polarity.NEGATIVE
+        in _polarities(
+            frame,
+            "EFFECT",
+        )
+    )
+
+
+def test_g_negative_effect_question_does_not_negate_debt_entity():
+    frame = parse_query(
+        "آیا بدهی مالیاتی روی امتیاز تاثیر ندارد؟"
+    )
+
+    assert (
+        Polarity.UNKNOWN
+        in _polarities(
+            frame,
+            "DEBT:مالیاتی",
+        )
+    )
+
+    assert (
+        Polarity.NEGATIVE
+        in _polarities(
+            frame,
+            "EFFECT",
+        )
+    )

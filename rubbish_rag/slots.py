@@ -550,6 +550,78 @@ def _span_distance(
     return 0
 
 
+def _effect_expression_spans(
+    text: str,
+) -> list[tuple[int, int]]:
+    """Locate effect predicates so their verbs are not reused as entity
+    existence cues.
+
+    Example:
+        "بدهی مالیاتی تاثیر ندارد"
+
+    Here "ندارد" negates EFFECT, not existence of the tax debt.
+    """
+    spans: list[tuple[int, int]] = []
+
+    for effect_cue in _EFFECT_CUES:
+        normalized = normalize_match_text(
+            effect_cue
+        )
+
+        if not normalized:
+            continue
+
+        for match in re.finditer(
+            re.escape(normalized),
+            text,
+        ):
+            spans.append(
+                (
+                    match.start(),
+                    match.end(),
+                )
+            )
+
+    return spans
+
+
+def _existence_cue_belongs_to_effect(
+    text: str,
+    cue_start: int,
+    cue_end: int,
+) -> bool:
+    """Return True when دارد/ندارد is governed by an effect expression."""
+
+    for effect_start, effect_end in (
+        _effect_expression_spans(text)
+    ):
+        # Direct overlap: effect cue itself may contain "دارد".
+        if (
+            cue_start < effect_end
+            and cue_end > effect_start
+        ):
+            return True
+
+        # Common Persian predicate:
+        #     تاثیر + دارد/ندارد
+        #     اثر + دارد/ندارد
+        #     موثر + است/نیست
+        if (
+            effect_end <= cue_start
+            and cue_start - effect_end <= 24
+        ):
+            return True
+
+        # Some configured effect cues may cover a longer expression.
+        if (
+            effect_start <= cue_start
+            and cue_start - effect_start <= 40
+        ):
+            return True
+
+    return False
+
+
 def _debt_polarity(
     clause: str,
     debt: EntityMention,
@@ -609,6 +681,13 @@ def _debt_polarity(
         clause,
         _EXISTENCE_NEGATIVE_CUES,
     ):
+        if _existence_cue_belongs_to_effect(
+            clause,
+            cue_start,
+            cue_end,
+        ):
+            continue
+
         for mention_start, mention_end, _ in mention_spans:
             distance = _span_distance(
                 mention_start,
@@ -630,6 +709,13 @@ def _debt_polarity(
         clause,
         _EXISTENCE_POSITIVE_CUES,
     ):
+        if _existence_cue_belongs_to_effect(
+            clause,
+            cue_start,
+            cue_end,
+        ):
+            continue
+
         for mention_start, mention_end, _ in mention_spans:
             distance = _span_distance(
                 mention_start,

@@ -674,3 +674,28 @@ Additional stress cases:
 
 Decision:
 FREEZE clause-scoped polarity after targeted and full offline validation pass.
+
+### Elective G v2.1 — Target-Aware Predicate Scope
+
+Additional validation after the clause-scoped implementation exposed a subtler
+target-scope issue.
+
+Observed:
+- In "آیا چک برگشتی روی امتیاز تاثیر دارد؟", the verb "دارد" was incorrectly
+  treated as evidence that the check debt itself exists.
+- In "بدهی مالیاتی روی امتیاز تاثیر ندارد", "ندارد" was incorrectly attached
+  both to debt existence and to the EFFECT proposition.
+
+Root cause:
+Existence-polarity extraction used nearby "دارد/ندارد" without distinguishing
+entity-existence predicates from effect predicates.
+
+Change:
+- effect-expression spans are now identified explicitly;
+- existence cues governed by an effect predicate are excluded from debt
+  existence polarity;
+- interrogative debt topics remain UNKNOWN unless existence is actually
+  asserted;
+- effect negation remains attached to EFFECT.
+
+This completes clause-scoped and target-scoped polarity handling.
