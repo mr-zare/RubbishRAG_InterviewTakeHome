@@ -15,7 +15,7 @@ import json
 import math
 import os
 import re
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 
 from .evidence import (
     assess_sufficiency,
@@ -465,41 +465,953 @@ class HeuristicFeatureJudge:
 
 
 # ---------------------------------------------------------------------------
-# 4. Open-Weight Model Adapter (Llama-3.2 / Qwen2.5 with Graceful Fallback)
+# 4. Open-Weight Model Adapter (Local-Only + Graceful Fallback)
 # ---------------------------------------------------------------------------
 
 class OpenWeightLLMJudge:
-    """Adapter for local open-weight instruction models (e.g. Llama-3.2-1B, Qwen2.5-0.5B).
-    
-    If the model weights are not loaded locally, it automatically falls back
-    to the HeuristicFeatureJudge, ensuring full offline functionality.
+    """Optional local open-weight System-1 judge.
+
+    Design constraints:
+    - zero network access;
+    - zero mandatory model dependency;
+    - no model loading at construction time;
+    - local model loading only when explicitly configured;
+    - deterministic generation;
+    - graceful fallback to HeuristicFeatureJudge.
+
+    A local model can be supplied via:
+      1. local_model_path=...
+      2. RUBBISHRAG_LOCAL_JUDGE_MODEL
+      3. allow_cached_model=True, which permits using an already-cached
+         Hugging Face model ID with local_files_only=True.
+
+    No model is downloaded by this class.
     """
 
-    SYSTEM_PROMPT = """You are a fast System-1 RAG Decision Judge for Persian credit scoring.
-Return ONLY a valid JSON object matching the requested schema. Do not generate explanations or chain of thought."""
+    SYSTEM_PROMPT = (
+        "You are a fast System-1 RAG Decision Judge for Persian "
+        "credit-scoring retrieval. "
+        "Return ONLY one valid JSON object matching the requested schema. "
+        "Do not include reasoning, markdown, or chain of thought."
+    )
 
-    def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", fallback: Optional[RAGDecisionJudge] = None):
+    _PRE_ACTIONS = {
+        "retrieve",
+        "no_retrieval",
+        "clarify",
+    }
+
+    _POST_SUFFICIENCY = {
+        "sufficient",
+        "insufficient",
+        "conflicting",
+        "irrelevant",
+        "uncertain",
+    }
+
+    _POST_ACTIONS = {
+        "answer",
+        "retrieve_more",
+        "clarify",
+        "abstain",
+    }
+
+    _RETRIEVAL_STRATEGIES = {
+        "hybrid",
+        "sparse_only",
+        "dense_only",
+    }
+
+    _ALLOWED_TOP_K = (
+        0,
+        2,
+        3,
+        5,
+        8,
+    )
+
+    def __init__(
+        self,
+        model_name: str = (
+            "Qwen/Qwen2.5-0.5B-Instruct"
+        ),
+        fallback: Optional[
+            RAGDecisionJudge
+        ] = None,
+        *,
+        local_model_path: Optional[
+            str
+        ] = None,
+        allow_cached_model: bool = False,
+        generator: Optional[
+            Callable[[str], str]
+        ] = None,
+        max_new_tokens: int = 192,
+        escalation_threshold: float = 0.75,
+        force_model: bool = False,
+    ):
         self.model_name = model_name
-        self.fallback = fallback or HeuristicFeatureJudge()
+        self.fallback = (
+            fallback
+            or HeuristicFeatureJudge()
+        )
+
+        self.local_model_path = (
+            local_model_path
+            or os.getenv(
+                "RUBBISHRAG_LOCAL_JUDGE_MODEL"
+            )
+        )
+
+        self.allow_cached_model = bool(
+            allow_cached_model
+        )
+
+        self.max_new_tokens = int(
+            max_new_tokens
+        )
+
+        self.escalation_threshold = float(
+            escalation_threshold
+        )
+
+        self.force_model = bool(
+            force_model
+        )
+
+        # Testable / provider-neutral injection point.
+        self._generator = generator
+
         self._model = None
         self._tokenizer = None
+        self._load_attempted = False
+
+        self.backend_status = (
+            "injected_generator"
+            if generator is not None
+            else "uninitialized"
+        )
+
+        self.last_fallback_reason: Optional[
+            str
+        ] = None
+
+    @staticmethod
+    def _clamp_probability(
+        value: Any,
+        default: float,
+    ) -> float:
+        try:
+            result = float(value)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            result = float(default)
+
+        return round(
+            min(
+                1.0,
+                max(
+                    0.0,
+                    result,
+                ),
+            ),
+            3,
+        )
+
+    @staticmethod
+    def _strings(
+        value: Any,
+        default: Optional[
+            List[str]
+        ] = None,
+    ) -> List[str]:
+        if not isinstance(
+            value,
+            list,
+        ):
+            return list(
+                default or []
+            )
+
+        return [
+            str(item)
+            for item in value
+            if item is not None
+        ]
+
+    @staticmethod
+    def _ints(
+        value: Any,
+        default: Optional[
+            List[int]
+        ] = None,
+    ) -> List[int]:
+        if not isinstance(
+            value,
+            list,
+        ):
+            return list(
+                default or []
+            )
+
+        result = []
+
+        for item in value:
+            try:
+                result.append(
+                    int(item)
+                )
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+        return result
+
+    @classmethod
+    def _nearest_top_k(
+        cls,
+        value: Any,
+        default: int,
+    ) -> int:
+        try:
+            requested = int(value)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            requested = int(default)
+
+        return min(
+            cls._ALLOWED_TOP_K,
+            key=lambda k: abs(
+                k - requested
+            ),
+        )
+
+    @staticmethod
+    def _extract_json_object(
+        raw: str,
+    ) -> Optional[
+        Dict[str, Any]
+    ]:
+        if not isinstance(
+            raw,
+            str,
+        ):
+            return None
+
+        text = raw.strip()
+
+        if text.startswith("```"):
+            text = re.sub(
+                r"^```(?:json)?\s*",
+                "",
+                text,
+                flags=re.I,
+            )
+            text = re.sub(
+                r"\s*```$",
+                "",
+                text,
+            )
+
+        start = text.find("{")
+        end = text.rfind("}")
+
+        if (
+            start < 0
+            or end < start
+        ):
+            return None
+
+        try:
+            payload = json.loads(
+                text[
+                    start : end + 1
+                ]
+            )
+        except (
+            json.JSONDecodeError,
+            TypeError,
+        ):
+            return None
+
+        if not isinstance(
+            payload,
+            dict,
+        ):
+            return None
+
+        return payload
+
+    def _model_source(
+        self,
+    ) -> Optional[str]:
+        if self.local_model_path:
+            return self.local_model_path
+
+        if self.allow_cached_model:
+            return self.model_name
+
+        return None
+
+    def _ensure_local_backend(
+        self,
+    ) -> bool:
+        """Lazy-load a strictly local Transformers model.
+
+        `local_files_only=True` is mandatory so this path cannot trigger a
+        Hugging Face download.
+        """
+
+        if self._generator is not None:
+            self.backend_status = (
+                "injected_generator"
+            )
+            return True
+
+        if self._model is not None:
+            return True
+
+        if self._load_attempted:
+            return False
+
+        self._load_attempted = True
+
+        source = self._model_source()
+
+        if not source:
+            self.backend_status = (
+                "fallback:no_local_model"
+            )
+            self.last_fallback_reason = (
+                "NO_LOCAL_MODEL_CONFIGURED"
+            )
+            return False
+
+        try:
+            from transformers import (
+                AutoModelForCausalLM,
+                AutoTokenizer,
+            )
+        except Exception as exc:
+            self.backend_status = (
+                "fallback:"
+                + type(exc).__name__
+            )
+            self.last_fallback_reason = (
+                "TRANSFORMERS_UNAVAILABLE"
+            )
+            return False
+
+        try:
+            tokenizer = (
+                AutoTokenizer.from_pretrained(
+                    source,
+                    local_files_only=True,
+                )
+            )
+
+            model = (
+                AutoModelForCausalLM.from_pretrained(
+                    source,
+                    local_files_only=True,
+                )
+            )
+
+            model.eval()
+
+            self._tokenizer = tokenizer
+            self._model = model
+
+            self.backend_status = (
+                "local_transformers"
+            )
+            self.last_fallback_reason = (
+                None
+            )
+
+            return True
+
+        except Exception as exc:
+            self._tokenizer = None
+            self._model = None
+
+            self.backend_status = (
+                "fallback:"
+                + type(exc).__name__
+            )
+
+            self.last_fallback_reason = (
+                "LOCAL_MODEL_LOAD_FAILED"
+            )
+
+            return False
+
+    def _generate(
+        self,
+        prompt: str,
+    ) -> Optional[str]:
+        if self._generator is not None:
+            try:
+                return str(
+                    self._generator(
+                        prompt
+                    )
+                )
+            except Exception:
+                self.last_fallback_reason = (
+                    "INJECTED_GENERATOR_FAILED"
+                )
+                return None
+
+        if not self._ensure_local_backend():
+            return None
+
+        assert (
+            self._tokenizer is not None
+        )
+        assert self._model is not None
+
+        tokenizer = self._tokenizer
+        model = self._model
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    self.SYSTEM_PROMPT
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ]
+
+        try:
+            if hasattr(
+                tokenizer,
+                "apply_chat_template",
+            ):
+                rendered = (
+                    tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=True,
+                    )
+                )
+            else:
+                rendered = (
+                    self.SYSTEM_PROMPT
+                    + "\n\n"
+                    + prompt
+                )
+
+            inputs = tokenizer(
+                rendered,
+                return_tensors="pt",
+            )
+
+            try:
+                device = next(
+                    model.parameters()
+                ).device
+
+                inputs = {
+                    key: (
+                        value.to(device)
+                        if hasattr(
+                            value,
+                            "to",
+                        )
+                        else value
+                    )
+                    for key, value
+                    in inputs.items()
+                }
+            except Exception:
+                pass
+
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=(
+                    self.max_new_tokens
+                ),
+                do_sample=False,
+                pad_token_id=getattr(
+                    tokenizer,
+                    "eos_token_id",
+                    None,
+                ),
+            )
+
+            input_len = int(
+                inputs[
+                    "input_ids"
+                ].shape[-1]
+            )
+
+            generated = outputs[
+                0
+            ][input_len:]
+
+            return tokenizer.decode(
+                generated,
+                skip_special_tokens=True,
+            )
+
+        except Exception:
+            self.last_fallback_reason = (
+                "LOCAL_GENERATION_FAILED"
+            )
+            return None
+
+    def _request_json(
+        self,
+        prompt: str,
+    ) -> Optional[
+        Dict[str, Any]
+    ]:
+        raw = self._generate(
+            prompt
+        )
+
+        if raw is None:
+            return None
+
+        payload = (
+            self._extract_json_object(
+                raw
+            )
+        )
+
+        if payload is None:
+            self.last_fallback_reason = (
+                "INVALID_LOCAL_MODEL_JSON"
+            )
+
+        return payload
 
     def pre_retrieval(
         self,
         query: str,
-        conversation: Optional[List[Dict[str, Any]]] = None,
-        slots: Optional[Dict[str, Any]] = None,
+        conversation: Optional[
+            List[Dict[str, Any]]
+        ] = None,
+        slots: Optional[
+            Dict[str, Any]
+        ] = None,
     ) -> PreRetrievalDecision:
-        # If open-weight model is not active in memory, delegate to high-speed feature judge
-        return self.fallback.pre_retrieval(query, conversation, slots)
+        base = (
+            self.fallback.pre_retrieval(
+                query,
+                conversation,
+                slots,
+            )
+        )
+
+        if (
+            not self.force_model
+            and base.confidence
+            >= self.escalation_threshold
+        ):
+            self.backend_status = (
+                "heuristic_fast_path"
+            )
+            self.last_fallback_reason = None
+
+            return dataclasses.replace(
+                base,
+                reason_codes=sorted(
+                    set(
+                        list(
+                            base.reason_codes
+                        )
+                        + [
+                            "HEURISTIC_FAST_PATH",
+                        ]
+                    )
+                ),
+            )
+
+        prompt = (
+            "Perform PRE_RETRIEVAL routing.\n"
+            "Return JSON with exactly these semantic fields:\n"
+            "{"
+            '"action":"retrieve|no_retrieval|clarify",'
+            '"missing_slots":[],'
+            '"retrieval_strategy":"hybrid|sparse_only|dense_only",'
+            '"query_rewrite":"...",'
+            '"target_entities":[],'
+            '"target_facets":[],'
+            '"top_k":0,'
+            '"confidence":0.0,'
+            '"retrieve_probability":0.0,'
+            '"clarify_probability":0.0,'
+            '"reason_codes":[]'
+            "}\n\n"
+            "Allowed top_k values: 0,2,3,5,8.\n"
+            f"Query: {query}\n"
+            f"Slots: {json.dumps(slots or {}, ensure_ascii=False)}"
+        )
+
+        payload = (
+            self._request_json(
+                prompt
+            )
+        )
+
+        if payload is None:
+            return base
+
+        action = str(
+            payload.get(
+                "action",
+                "",
+            )
+        ).strip().lower()
+
+        if action not in self._PRE_ACTIONS:
+            self.last_fallback_reason = (
+                "INVALID_PRE_ACTION"
+            )
+            return base
+
+        strategy = str(
+            payload.get(
+                "retrieval_strategy",
+                base.retrieval_strategy,
+            )
+        ).strip().lower()
+
+        if (
+            strategy
+            not in self._RETRIEVAL_STRATEGIES
+        ):
+            strategy = (
+                base.retrieval_strategy
+            )
+
+        if action == "retrieve":
+            top_k = (
+                self._nearest_top_k(
+                    payload.get(
+                        "top_k",
+                        base.top_k,
+                    ),
+                    max(
+                        2,
+                        base.top_k,
+                    ),
+                )
+            )
+
+            if top_k == 0:
+                top_k = 2
+        else:
+            top_k = 0
+
+        reasons = self._strings(
+            payload.get(
+                "reason_codes"
+            ),
+            base.reason_codes,
+        )
+
+        reasons.append(
+            "OPEN_WEIGHT_LOCAL_DECISION"
+        )
+
+        return PreRetrievalDecision(
+            action=action,
+            needs_retrieval=(
+                action == "retrieve"
+            ),
+            needs_clarification=(
+                action == "clarify"
+            ),
+            missing_slots=self._strings(
+                payload.get(
+                    "missing_slots"
+                ),
+                base.missing_slots,
+            ),
+            retrieval_strategy=strategy,
+            query_rewrite=str(
+                payload.get(
+                    "query_rewrite",
+                    base.query_rewrite,
+                )
+                or query
+            ),
+            target_entities=self._strings(
+                payload.get(
+                    "target_entities"
+                ),
+                base.target_entities,
+            ),
+            target_facets=self._strings(
+                payload.get(
+                    "target_facets"
+                ),
+                base.target_facets,
+            ),
+            top_k=top_k,
+            confidence=(
+                self._clamp_probability(
+                    payload.get(
+                        "confidence"
+                    ),
+                    base.confidence,
+                )
+            ),
+            retrieve_probability=(
+                self._clamp_probability(
+                    payload.get(
+                        "retrieve_probability"
+                    ),
+                    base.retrieve_probability,
+                )
+            ),
+            clarify_probability=(
+                self._clamp_probability(
+                    payload.get(
+                        "clarify_probability"
+                    ),
+                    base.clarify_probability,
+                )
+            ),
+            reason_codes=sorted(
+                set(reasons)
+            ),
+        )
 
     def post_retrieval(
         self,
         query: str,
-        hits: List[Dict[str, Any]],
-        state: Optional[Dict[str, Any]] = None,
+        hits: List[
+            Dict[str, Any]
+        ],
+        state: Optional[
+            Dict[str, Any]
+        ] = None,
     ) -> EvidenceDecision:
-        return self.fallback.post_retrieval(query, hits, state)
+        base = (
+            self.fallback.post_retrieval(
+                query,
+                hits,
+                state,
+            )
+        )
+
+        if (
+            not self.force_model
+            and base.confidence
+            >= self.escalation_threshold
+        ):
+            self.backend_status = (
+                "heuristic_fast_path"
+            )
+            self.last_fallback_reason = None
+
+            return dataclasses.replace(
+                base,
+                reason_codes=sorted(
+                    set(
+                        list(
+                            base.reason_codes
+                        )
+                        + [
+                            "HEURISTIC_FAST_PATH",
+                        ]
+                    )
+                ),
+            )
+
+        compact_hits = []
+
+        for hit in hits[:8]:
+            compact_hits.append(
+                {
+                    "doc_id": (
+                        hit.get(
+                            "doc_id"
+                        )
+                    ),
+                    "trusted": (
+                        hit.get(
+                            "trusted"
+                        )
+                    ),
+                    "citation_eligible": (
+                        hit.get(
+                            "citation_eligible"
+                        )
+                    ),
+                    "text": str(
+                        hit.get(
+                            "brief_answer"
+                        )
+                        or hit.get(
+                            "text"
+                        )
+                        or ""
+                    )[:600],
+                }
+            )
+
+        prompt = (
+            "Perform POST_RETRIEVAL collective evidence assessment.\n"
+            "Return JSON with these fields:\n"
+            "{"
+            '"sufficiency":"sufficient|insufficient|conflicting|irrelevant|uncertain",'
+            '"evidence_score":0.0,'
+            '"conflicting_items":[],'
+            '"poison_detected":false,'
+            '"repetition_detected":false,'
+            '"novel_evidence_chunks":0,'
+            '"next_action":"answer|retrieve_more|clarify|abstain",'
+            '"confidence":0.0,'
+            '"sufficiency_probability":0.0,'
+            '"reason_codes":[]'
+            "}\n\n"
+            f"Query: {query}\n"
+            "Hits: "
+            + json.dumps(
+                compact_hits,
+                ensure_ascii=False,
+            )
+        )
+
+        payload = (
+            self._request_json(
+                prompt
+            )
+        )
+
+        if payload is None:
+            return base
+
+        sufficiency = str(
+            payload.get(
+                "sufficiency",
+                "",
+            )
+        ).strip().lower()
+
+        next_action = str(
+            payload.get(
+                "next_action",
+                "",
+            )
+        ).strip().lower()
+
+        if (
+            sufficiency
+            not in self._POST_SUFFICIENCY
+            or next_action
+            not in self._POST_ACTIONS
+        ):
+            self.last_fallback_reason = (
+                "INVALID_POST_DECISION"
+            )
+            return base
+
+        try:
+            evidence_score = float(
+                payload.get(
+                    "evidence_score",
+                    base.evidence_score,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            evidence_score = float(
+                base.evidence_score
+            )
+
+        try:
+            novel_count = int(
+                payload.get(
+                    "novel_evidence_chunks",
+                    base.novel_evidence_chunks,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            novel_count = int(
+                base.novel_evidence_chunks
+            )
+
+        reasons = self._strings(
+            payload.get(
+                "reason_codes"
+            ),
+            base.reason_codes,
+        )
+
+        reasons.append(
+            "OPEN_WEIGHT_LOCAL_DECISION"
+        )
+
+        return EvidenceDecision(
+            sufficiency=sufficiency,
+            evidence_score=round(
+                evidence_score,
+                3,
+            ),
+            conflicting_items=self._ints(
+                payload.get(
+                    "conflicting_items"
+                ),
+                base.conflicting_items,
+            ),
+            poison_detected=bool(
+                payload.get(
+                    "poison_detected",
+                    base.poison_detected,
+                )
+            ),
+            repetition_detected=bool(
+                payload.get(
+                    "repetition_detected",
+                    base.repetition_detected,
+                )
+            ),
+            novel_evidence_chunks=max(
+                0,
+                novel_count,
+            ),
+            next_action=next_action,
+            confidence=(
+                self._clamp_probability(
+                    payload.get(
+                        "confidence"
+                    ),
+                    base.confidence,
+                )
+            ),
+            sufficiency_probability=(
+                self._clamp_probability(
+                    payload.get(
+                        "sufficiency_probability"
+                    ),
+                    base.sufficiency_probability,
+                )
+            ),
+            reason_codes=sorted(
+                set(reasons)
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +1515,425 @@ def adaptive_select_hits(
         last_decision = judge.post_retrieval(query, selected)
 
     return selected, last_decision
+
+
+
+# ---------------------------------------------------------------------------
+# 5.1 Bounded Adaptive Decision Loop / Confidence Escalation
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class AdaptiveLoopResult:
+    """Observable result of the bounded System-1 decision state machine."""
+
+    action: str
+    pre_decision: PreRetrievalDecision
+    evidence_decision: Optional[EvidenceDecision]
+    selected_hits: List[Dict[str, Any]]
+    rounds: int
+    requested_top_ks: List[int]
+    total_candidates_seen: int
+    escalated: bool
+    reason_codes: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def escalate_pre_retrieval_decision(
+    decision: PreRetrievalDecision,
+    *,
+    confidence_threshold: float = 0.75,
+    max_k: int = 8,
+) -> Tuple[PreRetrievalDecision, bool]:
+    """Apply the documented selective-prediction escalation cascade.
+
+    High-confidence fast decisions are preserved.
+
+    Low-confidence decisions are escalated conservatively:
+    - an existing clarification stays a clarification;
+    - uncertain no-retrieval becomes retrieval;
+    - uncertain retrieval gets a broader context budget.
+
+    This function is deterministic and does not perform retrieval itself.
+    """
+
+    if decision.confidence >= confidence_threshold:
+        return decision, False
+
+    reasons = list(decision.reason_codes)
+
+    if decision.needs_clarification:
+        reasons.append(
+            "LOW_CONFIDENCE_EXPLICIT_CLARIFICATION"
+        )
+        return (
+            dataclasses.replace(
+                decision,
+                action="clarify",
+                needs_clarification=True,
+                reason_codes=sorted(set(reasons)),
+            ),
+            True,
+        )
+
+    broadened_k = min(
+        max_k,
+        max(
+            5,
+            int(decision.top_k or 0) + 2,
+        ),
+    )
+
+    reasons.append(
+        "LOW_CONFIDENCE_BROADER_RETRIEVAL"
+    )
+
+    return (
+        dataclasses.replace(
+            decision,
+            action="retrieve",
+            needs_retrieval=True,
+            needs_clarification=False,
+            retrieval_strategy="hybrid",
+            top_k=broadened_k,
+            reason_codes=sorted(set(reasons)),
+        ),
+        True,
+    )
+
+
+def _adaptive_hit_identity(
+    hit: Dict[str, Any],
+) -> Tuple[str, str]:
+    """Stable identity used to avoid repeated evidence across rounds."""
+
+    if hit.get("doc_id") is not None:
+        return (
+            "doc_id",
+            str(hit.get("doc_id")),
+        )
+
+    return (
+        "text",
+        str(
+            hit.get("text")
+            or hit.get("question")
+            or hit.get("brief_answer")
+            or ""
+        ),
+    )
+
+
+def run_bounded_adaptive_loop(
+    query: str,
+    retriever: Callable[
+        [str, int],
+        List[Dict[str, Any]],
+    ],
+    *,
+    judge: Optional[RAGDecisionJudge] = None,
+    max_rounds: int = 2,
+    max_k: int = 8,
+    min_k: int = 1,
+    confidence_threshold: Optional[float] = None,
+) -> AdaptiveLoopResult:
+    """Run the documented bounded Adaptive-RAG decision state machine.
+
+    Important:
+    - at most two retrieval rounds are permitted;
+    - conversational / clarification decisions perform zero retrievals;
+    - insufficient evidence may broaden retrieval once;
+    - conflicting / irrelevant evidence terminates safely;
+    - no remote dependency is embedded here: retrieval is injected.
+    """
+
+    if not 1 <= int(max_rounds) <= 2:
+        raise ValueError(
+            "max_rounds must be between 1 and 2"
+        )
+
+    active_judge = (
+        judge
+        or HeuristicFeatureJudge()
+    )
+
+    threshold = (
+        float(confidence_threshold)
+        if confidence_threshold is not None
+        else float(
+            getattr(
+                active_judge,
+                "confidence_threshold",
+                0.75,
+            )
+        )
+    )
+
+    pre = active_judge.pre_retrieval(
+        query
+    )
+
+    routed, escalated = (
+        escalate_pre_retrieval_decision(
+            pre,
+            confidence_threshold=threshold,
+            max_k=max_k,
+        )
+    )
+
+    base_reasons = list(
+        routed.reason_codes
+    )
+
+    if routed.action == "no_retrieval":
+        return AdaptiveLoopResult(
+            action="no_retrieval",
+            pre_decision=routed,
+            evidence_decision=None,
+            selected_hits=[],
+            rounds=0,
+            requested_top_ks=[],
+            total_candidates_seen=0,
+            escalated=escalated,
+            reason_codes=sorted(
+                set(
+                    base_reasons
+                    + ["FAST_NO_RETRIEVAL"]
+                )
+            ),
+        )
+
+    if (
+        routed.action == "clarify"
+        or routed.needs_clarification
+    ):
+        return AdaptiveLoopResult(
+            action="clarify",
+            pre_decision=routed,
+            evidence_decision=None,
+            selected_hits=[],
+            rounds=0,
+            requested_top_ks=[],
+            total_candidates_seen=0,
+            escalated=escalated,
+            reason_codes=sorted(
+                set(
+                    base_reasons
+                    + ["PRE_RETRIEVAL_CLARIFICATION"]
+                )
+            ),
+        )
+
+    requested_top_ks: List[int] = []
+    accumulated: List[
+        Dict[str, Any]
+    ] = []
+    seen = set()
+
+    current_k = max(
+        min_k,
+        min(
+            max_k,
+            int(
+                routed.top_k
+                or min_k
+            ),
+        ),
+    )
+
+    last_decision: Optional[
+        EvidenceDecision
+    ] = None
+
+    last_selected: List[
+        Dict[str, Any]
+    ] = []
+
+    for round_index in range(
+        1,
+        int(max_rounds) + 1,
+    ):
+        requested_top_ks.append(
+            current_k
+        )
+
+        batch = list(
+            retriever(
+                query,
+                current_k,
+            )
+            or []
+        )
+
+        for hit in batch:
+            identity = (
+                _adaptive_hit_identity(
+                    hit
+                )
+            )
+
+            if identity in seen:
+                continue
+
+            seen.add(identity)
+            accumulated.append(hit)
+
+        if accumulated:
+            selected, decision = (
+                adaptive_select_hits(
+                    query,
+                    accumulated,
+                    active_judge,
+                    max_k=min(
+                        max_k,
+                        len(accumulated),
+                    ),
+                    min_k=min(
+                        min_k,
+                        len(accumulated),
+                    ),
+                )
+            )
+        else:
+            selected = []
+            decision = (
+                active_judge.post_retrieval(
+                    query,
+                    [],
+                )
+            )
+
+        last_selected = selected
+        last_decision = decision
+
+        if (
+            decision.sufficiency
+            == "sufficient"
+            and decision.confidence
+            >= threshold
+        ):
+            return AdaptiveLoopResult(
+                action="answer",
+                pre_decision=routed,
+                evidence_decision=decision,
+                selected_hits=selected,
+                rounds=round_index,
+                requested_top_ks=(
+                    requested_top_ks
+                ),
+                total_candidates_seen=len(
+                    accumulated
+                ),
+                escalated=escalated,
+                reason_codes=sorted(
+                    set(
+                        base_reasons
+                        + decision.reason_codes
+                        + [
+                            "SUFFICIENT_EARLY_STOP",
+                        ]
+                    )
+                ),
+            )
+
+        if (
+            decision.sufficiency
+            in {
+                "conflicting",
+                "irrelevant",
+            }
+            or decision.next_action
+            == "abstain"
+        ):
+            return AdaptiveLoopResult(
+                action="abstain",
+                pre_decision=routed,
+                evidence_decision=decision,
+                selected_hits=selected,
+                rounds=round_index,
+                requested_top_ks=(
+                    requested_top_ks
+                ),
+                total_candidates_seen=len(
+                    accumulated
+                ),
+                escalated=escalated,
+                reason_codes=sorted(
+                    set(
+                        base_reasons
+                        + decision.reason_codes
+                        + [
+                            "CONFLICT_OR_IRRELEVANCE_STOP",
+                        ]
+                    )
+                ),
+            )
+
+        if (
+            decision.next_action
+            == "clarify"
+        ):
+            return AdaptiveLoopResult(
+                action="clarify",
+                pre_decision=routed,
+                evidence_decision=decision,
+                selected_hits=selected,
+                rounds=round_index,
+                requested_top_ks=(
+                    requested_top_ks
+                ),
+                total_candidates_seen=len(
+                    accumulated
+                ),
+                escalated=escalated,
+                reason_codes=sorted(
+                    set(
+                        base_reasons
+                        + decision.reason_codes
+                        + [
+                            "POST_RETRIEVAL_CLARIFICATION",
+                        ]
+                    )
+                ),
+            )
+
+        # Only INSUFFICIENT / RETRIEVE_MORE reaches here.
+        # Broaden the second and final retrieval budget.
+        current_k = min(
+            max_k,
+            max(
+                current_k + 2,
+                current_k * 2,
+            ),
+        )
+
+    # The bounded state machine must not retrieve forever.
+    return AdaptiveLoopResult(
+        action="abstain",
+        pre_decision=routed,
+        evidence_decision=last_decision,
+        selected_hits=last_selected,
+        rounds=int(max_rounds),
+        requested_top_ks=requested_top_ks,
+        total_candidates_seen=len(
+            accumulated
+        ),
+        escalated=escalated,
+        reason_codes=sorted(
+            set(
+                base_reasons
+                + (
+                    last_decision.reason_codes
+                    if last_decision
+                    else []
+                )
+                + [
+                    "BOUNDED_RETRIEVAL_EXHAUSTED",
+                ]
+            )
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

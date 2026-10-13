@@ -276,7 +276,13 @@ def cmd_bastesh(args):
                     ".candidate.json",
                     "plots/score_spread.png", "plots/length_vs_bm25.png",
                     "plots/repetition_vs_bm25.png", "plots/report_card.png",
-                    "server/visible_bench.json"]:
+                    "server/visible_bench.json",
+                    "traces/glossary_metrics.json",
+                    "traces/judge_backend_ablation.json",
+                    "plots/judge_risk_coverage.png",
+                    "plots/judge_pareto_frontier.png",
+                    "docs/EXPERIMENT_LOG.md",
+                    "scripts/final_glossary_metrics.py"]:
             fp = os.path.join(BASE, rel)
             if os.path.exists(fp):
                 z.write(fp, rel)

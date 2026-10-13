@@ -1066,3 +1066,45 @@ Decision:
 
 FINALIZE documentation and package. No further production-code modification is
 required.
+
+<!-- FINAL-GLOSSARY-METRICS -->
+
+---
+
+## Staff Bonus — Final Adaptive Judge / OpenWeight / Glossary Evaluation
+
+Final implementation added:
+- bounded adaptive retrieval with at most two rounds;
+- confidence-based escalation;
+- dynamic top-k context budgeting;
+- p50/p95/p99 observability;
+- a local-only OpenWeight adapter;
+- actual CPU execution of Qwen2.5-0.5B-Instruct;
+- deterministic graceful fallback;
+- selective heuristic fast-path routing;
+- nDCG@3 / nDCG@5;
+- Risk-Coverage sweeps;
+- actual tokenizer-level context measurement;
+- Pareto analysis.
+
+No new remote retrieval was used in this final metric pass.
+
+Canonical Staff Judge:
+- routing accuracy: 93.30%;
+- clarification F1: 0.667;
+- dynamic top-k saving proxy: 32.0%;
+- Brier: 0.0624;
+- ECE: 0.0220.
+
+Tokenizer-level context measurement:
+- fixed k=5 tokens: 20699;
+- dynamic tokens: 14808;
+- measured saving: 28.46%.
+
+OpenWeight finding:
+The 0.5B model is operational on CPU, but raw model routing is slower and less
+accurate than the deterministic controller. The model is therefore retained as
+a selective low-confidence escalation backend.
+
+Final offline regression suite:
+**149/149 passed**.

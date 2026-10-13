@@ -1,0 +1,1118 @@
+{
+  "scope": {
+    "network_retrieval_used": false,
+    "runtime_behavior_modified_by_this_script": false,
+    "notes": [
+      "IR trace replay uses already-recorded remote candidate lists; no new retrieval is issued.",
+      "verified_local_replay evaluates the current trusted-local ranking subsystem only.",
+      "backend ablation accuracy is stricter three-way action matching and is not the official binary routing metric."
+    ]
+  },
+  "environment": {
+    "python": "3.11.0rc1",
+    "platform": "Linux-5.15.0-173-generic-x86_64-with-glibc2.35"
+  },
+  "official_judge_test": {
+    "total_queries": 15,
+    "split": "test",
+    "routing_accuracy": 0.933,
+    "clarification": {
+      "precision": 0.667,
+      "recall": 0.667,
+      "f1": 0.667,
+      "tp": 2,
+      "fp": 1,
+      "fn": 1
+    },
+    "sufficiency_accuracy": 0.267,
+    "context_budget": {
+      "mean_top_k": 3.4,
+      "baseline_fixed_k": 5,
+      "token_savings_pct": 32.0
+    },
+    "calibration": {
+      "brier_score": 0.0624,
+      "expected_calibration_error": 0.022
+    }
+  },
+  "ir": {
+    "stored_remote_trace_replay": {
+      "summary": {
+        "n": 20,
+        "hit_at_3": 0.4,
+        "hit_at_5": 0.55,
+        "mrr_at_5": 0.351667,
+        "ndcg_at_3": 0.338093,
+        "ndcg_at_5": 0.400503
+      },
+      "missing_trace_case_ids": [],
+      "rows": [
+        {
+          "id": "v0",
+          "query": "من یه بار فقط جریمه مالیاتی برام بریدن، چه طوری حذفش کنم؟",
+          "gold_doc_id": 173,
+          "ranked_ids": [
+            66,
+            271,
+            173,
+            118,
+            9002
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.3333333333333333,
+          "ndcg_at_3": 0.5,
+          "ndcg_at_5": 0.5,
+          "trace_line": 1012
+        },
+        {
+          "id": "v1",
+          "query": "اگر شرکت محکومیت مالی داشته باشد، چقدر رتبه‌اش کاهش پیدا میکنه؟",
+          "gold_doc_id": 56,
+          "ranked_ids": [
+            330,
+            19,
+            9106,
+            56,
+            234
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.25,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.43067655807339306,
+          "trace_line": 1013
+        },
+        {
+          "id": "v2",
+          "query": "اگر یک چک برگشتی داشته باشم اما بلافاصله (ظرف ۲۴ ساعت) مبلغ را تأمین و چک را رفع سوءاثر کنم، باز هم در سابقه اعتباری من ثبت می‌شود؟",
+          "gold_doc_id": 282,
+          "ranked_ids": [
+            282,
+            244,
+            225,
+            230,
+            181
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0,
+          "trace_line": 1014
+        },
+        {
+          "id": "v3",
+          "query": "۴۸۰ شدم. چرا؟",
+          "gold_doc_id": 311,
+          "ranked_ids": [
+            110,
+            0,
+            1,
+            1,
+            2
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1015
+        },
+        {
+          "id": "v4",
+          "query": "برای اشخاص حقوقی، رخدادهای عملیاتی مانند «تعطیلی موقت» یا «توقف تولید» در گزارش اعتباری بازتاب دارد؟",
+          "gold_doc_id": 137,
+          "ranked_ids": [
+            137,
+            288,
+            146,
+            264,
+            291
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0,
+          "trace_line": 1016
+        },
+        {
+          "id": "v5",
+          "query": "اگر در قراردادهایی که شرکت به‌عنوان ضامن حضور دارد، اقساط با تأخیر بازپرداخت شوند اما پرداخت‌ در نهایت انجام شود، آیا این تأخیر بر رتبه اعتباری شرکت ضامن تأثیر دارد؟",
+          "gold_doc_id": 9,
+          "ranked_ids": [
+            276,
+            299,
+            269,
+            324,
+            51
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1017
+        },
+        {
+          "id": "v6",
+          "query": "شرکت سودآوره ولی امتیاز نداره چرا؟",
+          "gold_doc_id": 86,
+          "ranked_ids": [
+            266,
+            121,
+            122,
+            51,
+            282
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1018
+        },
+        {
+          "id": "v7",
+          "query": "اگر شرکت در یک بانک خاص سابقه تاخیر در پرداخت بدهی داشته باشد، آیا این موضوع بر دریافت تسهیلات از سایر بانک‌ها تاثیر می‌گذارد؟",
+          "gold_doc_id": 76,
+          "ranked_ids": [
+            76,
+            156,
+            182,
+            84,
+            237
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0,
+          "trace_line": 1019
+        },
+        {
+          "id": "v8",
+          "query": "آیا امکان مقایسه امتیاز اعتباری یک شخص با شخص دیگر وجود دارد؟",
+          "gold_doc_id": 290,
+          "ranked_ids": [
+            211,
+            290,
+            275,
+            294,
+            215
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.5,
+          "ndcg_at_3": 0.6309297535714575,
+          "ndcg_at_5": 0.6309297535714575,
+          "trace_line": 1020
+        },
+        {
+          "id": "v9",
+          "query": "نمی‌خوام این چکم که برگشت خورده تو سابقه‌م بیاد، چه طوری حذفش کنم؟",
+          "gold_doc_id": 172,
+          "ranked_ids": [
+            47,
+            208,
+            292,
+            47,
+            298
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1021
+        },
+        {
+          "id": "v10",
+          "query": "من ضامن یک وام شدم. اگر شخص تاخیر زیادی در پرداخت قسط های وام داشته باشد، آیا امتیاز من به شدت کم می شود؟",
+          "gold_doc_id": 234,
+          "ranked_ids": [
+            208,
+            287,
+            185,
+            234,
+            119
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.25,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.43067655807339306,
+          "trace_line": 1000
+        },
+        {
+          "id": "v11",
+          "query": "چرا با وجود بازپرداخت به‌موقع اقساط، امتیاز اعتباری من هنوز افزایش نیافته است؟",
+          "gold_doc_id": 250,
+          "ranked_ids": [
+            221,
+            181,
+            194,
+            22,
+            39
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1001
+        },
+        {
+          "id": "v12",
+          "query": "عدد صادرات/واردات توی رتبه اعتباری موثره؟",
+          "gold_doc_id": 34,
+          "ranked_ids": [
+            301,
+            85,
+            9000,
+            301,
+            9003
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1002
+        },
+        {
+          "id": "v13",
+          "query": "آیا داشتن چند ضامن برای یک وام، در مقابل یک ضامن، تاثیر متفاوتی بر رتبه اعتباری ضامنان دارد؟",
+          "gold_doc_id": 262,
+          "ranked_ids": [
+            262,
+            283,
+            281,
+            70,
+            31
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0,
+          "trace_line": 1003
+        },
+        {
+          "id": "v14",
+          "query": "داشتن تعداد زیاد اعتبارات اسنادی همیشه خوب است؟",
+          "gold_doc_id": 8,
+          "ranked_ids": [
+            8,
+            80,
+            130,
+            49,
+            19
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0,
+          "trace_line": 1004
+        },
+        {
+          "id": "v15",
+          "query": "رتبه C3 یعنی چی؟",
+          "gold_doc_id": 108,
+          "ranked_ids": [
+            9004,
+            108,
+            91,
+            92,
+            245
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.5,
+          "ndcg_at_3": 0.6309297535714575,
+          "ndcg_at_5": 0.6309297535714575,
+          "trace_line": 1005
+        },
+        {
+          "id": "v16",
+          "query": "اگر شرکت بدهی به تامین‌کنندگان داشته باشد، آیا این بدهی در گزارش اعتباری ثبت می‌شود؟",
+          "gold_doc_id": 123,
+          "ranked_ids": [
+            65,
+            138,
+            66,
+            184,
+            263
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1006
+        },
+        {
+          "id": "v17",
+          "query": "من بدهی مالیاتی پرداخت نشده داشتم و رتبه ام E3 شده است. اگر آن را پرداخت کنم، چه اتفاقی می افتد؟",
+          "gold_doc_id": 237,
+          "ranked_ids": [
+            173,
+            178,
+            22,
+            287,
+            304
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1007
+        },
+        {
+          "id": "v18",
+          "query": "چرا وقتی شرکت هیچ سابقه تاخیری ندارد، بالاترین امتیاز رو نداره؟",
+          "gold_doc_id": 67,
+          "ranked_ids": [
+            16,
+            9001,
+            15,
+            140,
+            262
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 0.0,
+          "rr_at_5": 0.0,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.0,
+          "trace_line": 1008
+        },
+        {
+          "id": "v19",
+          "query": "تغییر محل قانونی و آدرس شرکت چه تأثیری بر امتیاز اعتباری دارد؟",
+          "gold_doc_id": 36,
+          "ranked_ids": [
+            15,
+            133,
+            165,
+            166,
+            36
+          ],
+          "hit_at_3": 0.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 0.2,
+          "ndcg_at_3": 0.0,
+          "ndcg_at_5": 0.38685280723454163,
+          "trace_line": 1009
+        }
+      ]
+    },
+    "verified_local_replay": {
+      "summary": {
+        "n": 20,
+        "hit_at_3": 1.0,
+        "hit_at_5": 1.0,
+        "mrr_at_5": 1.0,
+        "ndcg_at_3": 1.0,
+        "ndcg_at_5": 1.0
+      },
+      "rows": [
+        {
+          "id": "v0",
+          "query": "من یه بار فقط جریمه مالیاتی برام بریدن، چه طوری حذفش کنم؟",
+          "gold_doc_id": 173,
+          "ranked_ids": [
+            173,
+            237,
+            16,
+            310,
+            145
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v1",
+          "query": "اگر شرکت محکومیت مالی داشته باشد، چقدر رتبه‌اش کاهش پیدا میکنه؟",
+          "gold_doc_id": 56,
+          "ranked_ids": [
+            56,
+            127,
+            238,
+            294,
+            133
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v2",
+          "query": "اگر یک چک برگشتی داشته باشم اما بلافاصله (ظرف ۲۴ ساعت) مبلغ را تأمین و چک را رفع سوءاثر کنم، باز هم در سابقه اعتباری من ثبت می‌شود؟",
+          "gold_doc_id": 282,
+          "ranked_ids": [
+            282,
+            244,
+            230,
+            225,
+            29
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v3",
+          "query": "۴۸۰ شدم. چرا؟",
+          "gold_doc_id": 311,
+          "ranked_ids": [
+            311,
+            258,
+            314,
+            110,
+            234
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v4",
+          "query": "برای اشخاص حقوقی، رخدادهای عملیاتی مانند «تعطیلی موقت» یا «توقف تولید» در گزارش اعتباری بازتاب دارد؟",
+          "gold_doc_id": 137,
+          "ranked_ids": [
+            137,
+            13,
+            146,
+            41,
+            288
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v5",
+          "query": "اگر در قراردادهایی که شرکت به‌عنوان ضامن حضور دارد، اقساط با تأخیر بازپرداخت شوند اما پرداخت‌ در نهایت انجام شود، آیا این تأخیر بر رتبه اعتباری شرکت ضامن تأثیر دارد؟",
+          "gold_doc_id": 9,
+          "ranked_ids": [
+            9,
+            299,
+            280,
+            20,
+            297
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v6",
+          "query": "شرکت سودآوره ولی امتیاز نداره چرا؟",
+          "gold_doc_id": 86,
+          "ranked_ids": [
+            86,
+            85,
+            87,
+            67,
+            324
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v7",
+          "query": "اگر شرکت در یک بانک خاص سابقه تاخیر در پرداخت بدهی داشته باشد، آیا این موضوع بر دریافت تسهیلات از سایر بانک‌ها تاثیر می‌گذارد؟",
+          "gold_doc_id": 76,
+          "ranked_ids": [
+            76,
+            119,
+            184,
+            231,
+            299
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v8",
+          "query": "آیا امکان مقایسه امتیاز اعتباری یک شخص با شخص دیگر وجود دارد؟",
+          "gold_doc_id": 290,
+          "ranked_ids": [
+            290,
+            262,
+            266,
+            270,
+            167
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v9",
+          "query": "نمی‌خوام این چکم که برگشت خورده تو سابقه‌م بیاد، چه طوری حذفش کنم؟",
+          "gold_doc_id": 172,
+          "ranked_ids": [
+            172,
+            174,
+            170,
+            50,
+            204
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v10",
+          "query": "من ضامن یک وام شدم. اگر شخص تاخیر زیادی در پرداخت قسط های وام داشته باشد، آیا امتیاز من به شدت کم می شود؟",
+          "gold_doc_id": 234,
+          "ranked_ids": [
+            234,
+            258,
+            55,
+            299,
+            54
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v11",
+          "query": "چرا با وجود بازپرداخت به‌موقع اقساط، امتیاز اعتباری من هنوز افزایش نیافته است؟",
+          "gold_doc_id": 250,
+          "ranked_ids": [
+            250,
+            267,
+            229,
+            310,
+            324
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v12",
+          "query": "عدد صادرات/واردات توی رتبه اعتباری موثره؟",
+          "gold_doc_id": 34,
+          "ranked_ids": [
+            34,
+            15,
+            55,
+            82,
+            170
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v13",
+          "query": "آیا داشتن چند ضامن برای یک وام، در مقابل یک ضامن، تاثیر متفاوتی بر رتبه اعتباری ضامنان دارد؟",
+          "gold_doc_id": 262,
+          "ranked_ids": [
+            262,
+            266,
+            287,
+            270,
+            46
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v14",
+          "query": "داشتن تعداد زیاد اعتبارات اسنادی همیشه خوب است؟",
+          "gold_doc_id": 8,
+          "ranked_ids": [
+            8,
+            7,
+            130,
+            49,
+            197
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v15",
+          "query": "رتبه C3 یعنی چی؟",
+          "gold_doc_id": 108,
+          "ranked_ids": [
+            108,
+            97,
+            92,
+            91,
+            245
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v16",
+          "query": "اگر شرکت بدهی به تامین‌کنندگان داشته باشد، آیا این بدهی در گزارش اعتباری ثبت می‌شود؟",
+          "gold_doc_id": 123,
+          "ranked_ids": [
+            123,
+            260,
+            277,
+            163,
+            213
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v17",
+          "query": "من بدهی مالیاتی پرداخت نشده داشتم و رتبه ام E3 شده است. اگر آن را پرداخت کنم، چه اتفاقی می افتد؟",
+          "gold_doc_id": 237,
+          "ranked_ids": [
+            237,
+            173,
+            325,
+            65,
+            17
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v18",
+          "query": "چرا وقتی شرکت هیچ سابقه تاخیری ندارد، بالاترین امتیاز رو نداره؟",
+          "gold_doc_id": 67,
+          "ranked_ids": [
+            67,
+            45,
+            85,
+            86,
+            87
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        },
+        {
+          "id": "v19",
+          "query": "تغییر محل قانونی و آدرس شرکت چه تأثیری بر امتیاز اعتباری دارد؟",
+          "gold_doc_id": 36,
+          "ranked_ids": [
+            36,
+            133,
+            118,
+            35,
+            165
+          ],
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "rr_at_5": 1.0,
+          "ndcg_at_3": 1.0,
+          "ndcg_at_5": 1.0
+        }
+      ]
+    }
+  },
+  "risk_coverage": {
+    "retrieval": [
+      {
+        "threshold": 0.5,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.75,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.85,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.95,
+        "coverage": 1.0,
+        "selective_risk": 0.06666666666666667,
+        "accepted_accuracy": 0.9333333333333333,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.99,
+        "coverage": 0.0,
+        "selective_risk": null,
+        "accepted_accuracy": null,
+        "accepted_count": 0,
+        "total": 15
+      }
+    ],
+    "clarification": [
+      {
+        "threshold": 0.5,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.75,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.85,
+        "coverage": 1.0,
+        "selective_risk": 0.13333333333333333,
+        "accepted_accuracy": 0.8666666666666667,
+        "accepted_count": 15,
+        "total": 15
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.8666666666666667,
+        "selective_risk": 0.07692307692307693,
+        "accepted_accuracy": 0.9230769230769231,
+        "accepted_count": 13,
+        "total": 15
+      },
+      {
+        "threshold": 0.95,
+        "coverage": 0.8,
+        "selective_risk": 0.08333333333333333,
+        "accepted_accuracy": 0.9166666666666666,
+        "accepted_count": 12,
+        "total": 15
+      },
+      {
+        "threshold": 0.99,
+        "coverage": 0.06666666666666667,
+        "selective_risk": 0.0,
+        "accepted_accuracy": 1.0,
+        "accepted_count": 1,
+        "total": 15
+      }
+    ]
+  },
+  "backend_latency_percentiles": {
+    "heuristic": {
+      "n": 15,
+      "p50_ms": 12.98,
+      "p95_ms": 22.243,
+      "p99_ms": 27.969
+    },
+    "qwen_raw": {
+      "n": 15,
+      "p50_ms": 14994.677,
+      "p95_ms": 19618.853,
+      "p99_ms": 21803.979
+    },
+    "hybrid_selective": {
+      "n": 15,
+      "p50_ms": 9.94,
+      "p95_ms": 11.958,
+      "p99_ms": 13.688
+    }
+  },
+  "actual_context_token_savings": {
+    "status": "measured",
+    "tokenizer": "Qwen2.5-0.5B-Instruct",
+    "n": 15,
+    "fixed_k5_tokens": 20699,
+    "dynamic_tokens": 14808,
+    "actual_token_savings_pct": 28.46,
+    "per_query": [
+      {
+        "id": "j36",
+        "query": "شب بخیر، مرسی",
+        "dynamic_top_k": 0,
+        "fixed_k5_tokens": 0,
+        "dynamic_tokens": 0
+      },
+      {
+        "id": "j37",
+        "query": "می‌تونی کمکم کنی؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 0,
+        "dynamic_tokens": 0
+      },
+      {
+        "id": "j38",
+        "query": "رتبه A1 یعنی چی؟",
+        "dynamic_top_k": 2,
+        "fixed_k5_tokens": 2220,
+        "dynamic_tokens": 790
+      },
+      {
+        "id": "j39",
+        "query": "رتبه D3 یعنی چی؟",
+        "dynamic_top_k": 2,
+        "fixed_k5_tokens": 1522,
+        "dynamic_tokens": 774
+      },
+      {
+        "id": "j40",
+        "query": "بدهی عقب افتاده را دادم ولی رتبم عوض نشد",
+        "dynamic_top_k": 3,
+        "fixed_k5_tokens": 1637,
+        "dynamic_tokens": 795
+      },
+      {
+        "id": "j41",
+        "query": "چک صیادی برگشتی چقدر در رتبه اثر منفی دارد؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 1407,
+        "dynamic_tokens": 1099
+      },
+      {
+        "id": "j42",
+        "query": "بانک تجارت به رتبه B2 وام خودرو می‌دهد؟",
+        "dynamic_top_k": 5,
+        "fixed_k5_tokens": 2192,
+        "dynamic_tokens": 2192
+      },
+      {
+        "id": "j43",
+        "query": "قسطام عقب افتاده",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 1490,
+        "dynamic_tokens": 1079
+      },
+      {
+        "id": "j44",
+        "query": "آیا ضامن شدن برای وام دیگران در رتبه اعتباری من دیده می‌شود؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 1467,
+        "dynamic_tokens": 1230
+      },
+      {
+        "id": "j45",
+        "query": "حداکثر سقف امتیاز اعتباری ۹۰۰ است؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 1622,
+        "dynamic_tokens": 1177
+      },
+      {
+        "id": "j46",
+        "query": "درآمدم بالاست ولی امتیازم پایینه، چرا؟",
+        "dynamic_top_k": 3,
+        "fixed_k5_tokens": 1574,
+        "dynamic_tokens": 1226
+      },
+      {
+        "id": "j47",
+        "query": "شرکتم امتیاز نداره",
+        "dynamic_top_k": 3,
+        "fixed_k5_tokens": 1196,
+        "dynamic_tokens": 765
+      },
+      {
+        "id": "j48",
+        "query": "اگر چک ضمانت که برگشت نخورده سررسیدش بگذرد چه می‌شود؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 994,
+        "dynamic_tokens": 597
+      },
+      {
+        "id": "j49",
+        "query": "وام میخوام بدون اعتبارسنجی ۱۰۰ درصد تضمینی",
+        "dynamic_top_k": 5,
+        "fixed_k5_tokens": 1807,
+        "dynamic_tokens": 1807
+      },
+      {
+        "id": "j50",
+        "query": "آیا تغییر نام شرکت سوابق قبلی را پاک می‌کند؟",
+        "dynamic_top_k": 4,
+        "fixed_k5_tokens": 1571,
+        "dynamic_tokens": 1277
+      }
+    ]
+  },
+  "pareto": {
+    "objectives": {
+      "maximize": [
+        "accuracy"
+      ],
+      "minimize": [
+        "latency_ms",
+        "mean_top_k"
+      ]
+    },
+    "all_configs": [
+      {
+        "name": "heuristic",
+        "accuracy": 0.8,
+        "latency_ms": 13.496,
+        "mean_top_k": 3.4
+      },
+      {
+        "name": "qwen_raw",
+        "accuracy": 0.666667,
+        "latency_ms": 15788.758,
+        "mean_top_k": 3.0
+      },
+      {
+        "name": "hybrid_selective",
+        "accuracy": 0.8,
+        "latency_ms": 9.824,
+        "mean_top_k": 3.4
+      }
+    ],
+    "frontier_3d": [
+      {
+        "name": "qwen_raw",
+        "accuracy": 0.666667,
+        "latency_ms": 15788.758,
+        "mean_top_k": 3.0
+      },
+      {
+        "name": "hybrid_selective",
+        "accuracy": 0.8,
+        "latency_ms": 9.824,
+        "mean_top_k": 3.4
+      }
+    ],
+    "accuracy_latency_frontier": [
+      {
+        "name": "hybrid_selective",
+        "accuracy": 0.8,
+        "latency_ms": 9.824,
+        "mean_top_k": 3.4
+      }
+    ]
+  },
+  "glossary_coverage": {
+    "hit_at_k": true,
+    "mrr": true,
+    "ndcg": true,
+    "rrf": true,
+    "brier": true,
+    "ece": true,
+    "selective_prediction": true,
+    "risk_coverage": true,
+    "latency_p50": true,
+    "latency_p95": true,
+    "latency_p99": true,
+    "context_token_savings": true,
+    "pareto_frontier": true
+  }
+}

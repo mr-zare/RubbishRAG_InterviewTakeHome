@@ -10,10 +10,11 @@
 | Candidate | Erfan Zare |
 | GitHub | `@mr-zare` |
 | Submission branch | `solution/mr-zare` |
-| Submission date | 2026-10-12 |
+| Submission date | 2026-10-13 |
 | Runtime | Python 3.11 |
 | Execution target | CPU-only, standard developer machine |
-| External model/API dependency | None |
+| Production external model/API dependency | None |
+| Optional Staff local model | `Qwen2.5-0.5B-Instruct` on CPU; not required by production |
 | Production Judge | OFF; deterministic P3/P9/P10 stack is authoritative |
 
 ### Track Scope
@@ -580,3 +581,173 @@ Final validation:
 
 Network-dependent CLI tests were not re-run after retrieval quota exhaustion.
 No test was modified or bypassed to hide the quota limitation.
+
+<!-- FINAL-GLOSSARY-METRICS -->
+
+## Final Staff-Bonus and Metrics-Glossary Evaluation
+
+This final evaluation is offline. No new remote retrieval requests were issued,
+and these evaluation utilities do not participate in production ranking or
+answerability.
+
+### Staff Judge — canonical benchmark
+
+| Metric | Result |
+|---|---:|
+| Total test queries | 15 |
+| Routing Accuracy | 93.30% |
+| Clarify Precision | 0.667 |
+| Clarify Recall | 0.667 |
+| Clarify F1 | 0.667 |
+| Mean Dynamic top-k | 3.4 |
+| Fixed baseline k | 5 |
+| Dynamic top-k budget saving | 32.0% |
+| Brier Score | 0.0624 |
+| Expected Calibration Error | 0.0220 |
+
+The 32% value above is the challenge's dynamic top-k context-budget proxy.
+Tokenizer-level context savings are measured separately below.
+
+### Information Retrieval Metrics
+
+Binary relevance is used because each visible answer case provides one gold
+document.
+
+| Evaluation surface | N | Hit@3 | Hit@5 | MRR@5 | nDCG@3 | nDCG@5 |
+|---|---:|---:|---:|---:|---:|---:|
+| stored remote trace replay | 20 | 40.00% | 55.00% | 0.3517 | 0.3381 | 0.4005 |
+| current verified-local replay | 20 | 100.00% | 100.00% | 1.0000 | 1.0000 | 1.0000 |
+
+The stored-remote replay above uses the latest already-recorded traces for all
+20 visible answer cases. It is therefore a different evaluation surface from
+the earlier 17-query retrieval-characterization subset and should not be
+numerically conflated with that earlier diagnostic experiment.
+
+The verified-local replay measures the trusted local candidate/ranking
+subsystem, not the hidden remote retriever.
+
+### Selective Prediction / Risk-Coverage
+
+| Confidence threshold | Coverage | Selective risk | Accepted |
+|---:|---:|---:|---:|
+| 0.50 | 100.00% | 6.67% | 15 |
+| 0.60 | 100.00% | 6.67% | 15 |
+| 0.70 | 100.00% | 6.67% | 15 |
+| 0.75 | 100.00% | 6.67% | 15 |
+| 0.80 | 100.00% | 6.67% | 15 |
+| 0.85 | 100.00% | 6.67% | 15 |
+| 0.90 | 100.00% | 6.67% | 15 |
+| 0.95 | 100.00% | 6.67% | 15 |
+| 0.99 | 0.00% | n/a | 0 |
+
+The corresponding artifact is:
+
+`plots/judge_risk_coverage.png`
+
+The observed curve is intentionally reported as measured. On this small
+15-query split, retrieval-routing confidence is highly concentrated: coverage
+remains 100% through threshold 0.95 and drops to zero at 0.99.
+
+### Latency distribution
+
+| Backend | p50 ms | p95 ms | p99 ms |
+|---|---:|---:|---:|
+| heuristic | 12.98 | 22.243 | 27.969 |
+| qwen_raw | 14994.677 | 19618.853 | 21803.979 |
+| hybrid_selective | 9.94 | 11.958 | 13.688 |
+
+### Actual tokenizer-level context savings
+
+Tokenizer: `Qwen2.5-0.5B-Instruct`
+
+| Metric | Result |
+|---|---:|
+| Test queries | 15 |
+| Fixed k=5 retrieved tokens | 20699 |
+| Dynamic-budget retrieved tokens | 14808 |
+| Actual tokenizer-level saving | 28.46% |
+
+The measured tokenizer-level saving is intentionally kept separate from the
+official 32% top-k budget proxy. No claim is made that the measured token
+saving itself exceeds 30%.
+
+### OpenWeight CPU Backend
+
+`Qwen2.5-0.5B-Instruct` was successfully loaded and executed locally on CPU.
+
+The adapter is:
+- lazy;
+- local-files-only;
+- zero-download during runtime;
+- optional;
+- protected by deterministic graceful fallback.
+
+The production RAG path has no mandatory local-LLM dependency.
+
+The backend ablation below uses stricter three-way exact action agreement
+(`retrieve`, `no_retrieval`, `clarify`) and therefore must not be confused
+with the official binary routing metric above.
+
+| Backend | Three-way action accuracy | Mean top-k | Mean latency ms |
+|---|---:|---:|---:|
+| heuristic | 80.00% | 3.4 | 13.496 |
+| raw Qwen 0.5B | 66.67% | 3.0 | 15788.758 |
+| selective hybrid | 80.00% | 3.4 | 9.824 |
+
+Raw Qwen was CPU-viable but dramatically slower and weaker on exact action
+routing. This empirical result is why the local model remains an optional
+low-confidence escalation backend instead of replacing the deterministic
+controller.
+
+At the configured 0.75 threshold, all 15 Staff test cases were accepted by the
+high-confidence heuristic fast path. A separate low-confidence regression test
+explicitly verifies that model escalation is reachable and functional.
+
+### Pareto Analysis
+
+The three-objective analysis maximizes action accuracy while minimizing both
+decision latency and context budget.
+
+Three-objective non-dominated configurations:
+
+`qwen_raw, hybrid_selective`
+
+Because raw Qwen uses a slightly smaller mean context budget, it can remain
+non-dominated in the three-objective view despite poor latency.
+
+For the simpler accuracy/latency comparison, the non-dominated frontier is:
+
+`hybrid_selective`
+
+Artifact:
+
+`plots/judge_pareto_frontier.png`
+
+### Metrics-Glossary Coverage
+
+| Metric / concept | Covered |
+|---|---:|
+| Hit@K | Yes |
+| MRR | Yes |
+| nDCG | Yes |
+| RRF | Yes |
+| Brier Score | Yes |
+| ECE | Yes |
+| Selective Prediction | Yes |
+| Risk-Coverage | Yes |
+| Latency p50 | Yes |
+| Latency p95 | Yes |
+| Latency p99 | Yes |
+| Actual context-token savings | Yes |
+| Pareto frontier | Yes |
+
+### Final Regression Status
+
+Full offline regression suite after Core, electives, Staff Bonus, OpenWeight
+adapter, observability, and glossary extensions:
+
+**149 / 149 passed**
+
+Production answerability remains governed by deterministic P3/P9/P10. The
+Adaptive Judge and OpenWeight backend remain an evaluated optional control
+layer rather than production authority.
