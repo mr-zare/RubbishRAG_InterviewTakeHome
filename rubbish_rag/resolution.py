@@ -1,4 +1,3 @@
-"""Grounded answer/clarification resolver (P10 core contract)."""
 from __future__ import annotations
 
 from typing import Any
@@ -50,8 +49,6 @@ def resolve_grounded(query: str, ranked_hits: list[dict[str, Any]]) -> dict[str,
     )
 
     if not evidence.hits:
-        # Public resolver contract only advertises answer|clarify. P11 can map
-        # this internal insufficient state to a true abstention later.
         return {
             "status": "clarify",
             "question": "برای پاسخ قابل اتکا، لطفاً جزئیات بیشتری از موضوع یا رخداد اعتباری موردنظر ارائه کنید.",

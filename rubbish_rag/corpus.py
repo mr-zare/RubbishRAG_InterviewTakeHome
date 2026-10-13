@@ -1,4 +1,3 @@
-"""Immutable trusted-corpus registry and provenance primitives (P1/P7 foundation)."""
 from __future__ import annotations
 
 import csv
@@ -103,11 +102,6 @@ class TrustedCorpusRegistry:
         return int(doc_id) in self.records
 
     def rehydrate_hit(self, hit: dict[str, Any]) -> dict[str, Any] | None:
-        """Return a trusted authoritative copy of a remote candidate.
-
-        Unknown IDs fail closed. Remote scores/ranks are preserved as signals, but
-        downstream text and metadata come from the verified local corpus.
-        """
         record = self.get(int(hit.get("doc_id", -1)))
         if record is None:
             return None

@@ -291,12 +291,6 @@ class HeuristicFeatureJudge:
         hits: List[Dict[str, Any]],
         state: Optional[Dict[str, Any]] = None,
     ) -> EvidenceDecision:
-        """Assess evidence through the same P9/P10 contract as production.
-
-        Retrieval/fusion scores are ranking signals, not calibrated confidence.
-        Provenance, semantic coverage, and conflict status determine whether
-        evidence is sufficient.
-        """
 
         if not hits:
             return EvidenceDecision(
@@ -330,8 +324,6 @@ class HeuristicFeatureJudge:
             evidence,
         )
 
-        # Poison/untrusted detection is provenance-based rather than tied to
-        # any numeric document-ID range.
         untrusted_items: List[int] = []
 
         for hit in hits:
@@ -409,8 +401,6 @@ class HeuristicFeatureJudge:
             next_action = "retrieve_more"
             suff_prob = 0.15
 
-        # Repetition alone is a warning. It must not manufacture or destroy
-        # sufficiency when clean trusted evidence already satisfies P10.
         poison_detected = bool(
             untrusted_items
         )
@@ -465,28 +455,9 @@ class HeuristicFeatureJudge:
 
 
 # ---------------------------------------------------------------------------
-# 4. Open-Weight Model Adapter (Local-Only + Graceful Fallback)
 # ---------------------------------------------------------------------------
 
 class OpenWeightLLMJudge:
-    """Optional local open-weight System-1 judge.
-
-    Design constraints:
-    - zero network access;
-    - zero mandatory model dependency;
-    - no model loading at construction time;
-    - local model loading only when explicitly configured;
-    - deterministic generation;
-    - graceful fallback to HeuristicFeatureJudge.
-
-    A local model can be supplied via:
-      1. local_model_path=...
-      2. RUBBISHRAG_LOCAL_JUDGE_MODEL
-      3. allow_cached_model=True, which permits using an already-cached
-         Hugging Face model ID with local_files_only=True.
-
-    No model is downloaded by this class.
-    """
 
     SYSTEM_PROMPT = (
         "You are a fast System-1 RAG Decision Judge for Persian "
@@ -579,7 +550,6 @@ class OpenWeightLLMJudge:
             force_model
         )
 
-        # Testable / provider-neutral injection point.
         self._generator = generator
 
         self._model = None
@@ -762,11 +732,6 @@ class OpenWeightLLMJudge:
     def _ensure_local_backend(
         self,
     ) -> bool:
-        """Lazy-load a strictly local Transformers model.
-
-        `local_files_only=True` is mandatory so this path cannot trigger a
-        Hugging Face download.
-        """
 
         if self._generator is not None:
             self.backend_status = (
@@ -1421,19 +1386,6 @@ class OpenWeightLLMJudge:
 def _adaptive_candidate_is_eligible(
     hit: Dict[str, Any],
 ) -> bool:
-    """Whether a candidate may enter adaptive evidence selection.
-
-    Trust must never be inferred from a numeric document-ID range.
-
-    Rules:
-    - explicitly untrusted or uncitable candidates are rejected;
-    - synthetic contract-test candidates are accepted only when trust and
-      citation eligibility are explicitly asserted;
-    - normal runtime candidates must resolve to the trusted local corpus.
-
-    The last rule prevents an external payload from self-asserting trust merely
-    by setting trusted=True.
-    """
 
     if (
         hit.get("trusted") is False
@@ -1446,8 +1398,6 @@ def _adaptive_candidate_is_eligible(
         or ""
     )
 
-    # Explicit test-only contract path. Production candidates do not establish
-    # trust through these fields alone.
     if (
         candidate_source
         == "remote_unverified_test"
@@ -1497,8 +1447,6 @@ def adaptive_select_hits(
     last_decision: Optional[EvidenceDecision] = None
 
     for hit in ranked_hits[:max_k]:
-        # Candidate admission is provenance-based. Numeric document-ID ranges
-        # carry no trust or adversarial meaning.
         if not _adaptive_candidate_is_eligible(
             hit
         ):
@@ -1518,13 +1466,9 @@ def adaptive_select_hits(
 
 
 
-# ---------------------------------------------------------------------------
-# 5.1 Bounded Adaptive Decision Loop / Confidence Escalation
-# ---------------------------------------------------------------------------
 
 @dataclasses.dataclass
 class AdaptiveLoopResult:
-    """Observable result of the bounded System-1 decision state machine."""
 
     action: str
     pre_decision: PreRetrievalDecision
@@ -1546,17 +1490,6 @@ def escalate_pre_retrieval_decision(
     confidence_threshold: float = 0.75,
     max_k: int = 8,
 ) -> Tuple[PreRetrievalDecision, bool]:
-    """Apply the documented selective-prediction escalation cascade.
-
-    High-confidence fast decisions are preserved.
-
-    Low-confidence decisions are escalated conservatively:
-    - an existing clarification stays a clarification;
-    - uncertain no-retrieval becomes retrieval;
-    - uncertain retrieval gets a broader context budget.
-
-    This function is deterministic and does not perform retrieval itself.
-    """
 
     if decision.confidence >= confidence_threshold:
         return decision, False
@@ -1606,7 +1539,6 @@ def escalate_pre_retrieval_decision(
 def _adaptive_hit_identity(
     hit: Dict[str, Any],
 ) -> Tuple[str, str]:
-    """Stable identity used to avoid repeated evidence across rounds."""
 
     if hit.get("doc_id") is not None:
         return (
@@ -1638,15 +1570,6 @@ def run_bounded_adaptive_loop(
     min_k: int = 1,
     confidence_threshold: Optional[float] = None,
 ) -> AdaptiveLoopResult:
-    """Run the documented bounded Adaptive-RAG decision state machine.
-
-    Important:
-    - at most two retrieval rounds are permitted;
-    - conversational / clarification decisions perform zero retrievals;
-    - insufficient evidence may broaden retrieval once;
-    - conflicting / irrelevant evidence terminates safely;
-    - no remote dependency is embedded here: retrieval is injected.
-    """
 
     if not 1 <= int(max_rounds) <= 2:
         raise ValueError(
@@ -1898,8 +1821,6 @@ def run_bounded_adaptive_loop(
                 ),
             )
 
-        # Only INSUFFICIENT / RETRIEVE_MORE reaches here.
-        # Broaden the second and final retrieval budget.
         current_k = min(
             max_k,
             max(
@@ -1908,7 +1829,6 @@ def run_bounded_adaptive_loop(
             ),
         )
 
-    # The bounded state machine must not retrieve forever.
     return AdaptiveLoopResult(
         action="abstain",
         pre_decision=routed,

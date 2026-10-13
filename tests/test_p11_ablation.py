@@ -115,7 +115,6 @@ def test_p11_known_document_semantics_do_not_depend_on_warm_cache():
         "candidate_source": "verified_local",
     }
 
-    # Cold state.
     registry.document_frames.pop(
         doc_id,
         None,
@@ -123,7 +122,6 @@ def test_p11_known_document_semantics_do_not_depend_on_warm_cache():
 
     cold = _frame_for_hit(hit)
 
-    # Simulate another code path warming the shared registry cache.
     _document_frame(
         record,
         registry,

@@ -54,8 +54,6 @@ def test_rank_and_intent():
 
 def test_debt_ambiguity():
     frame = parse_query("بدهی دارم")
-    # The generic phrase is underspecified: no debt subtype is present.
-    # Intent may remain general until downstream resolver asks for the missing type.
     assert not frame.debt_types
     assert frame.ambiguity.underspecified is True
     assert "debt_type" in frame.ambiguity.missing_required_slots

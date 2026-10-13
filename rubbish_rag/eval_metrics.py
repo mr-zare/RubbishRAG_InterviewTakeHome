@@ -1,8 +1,3 @@
-"""Offline evaluation metrics used by the final RubbishRAG evidence pass.
-
-These functions are evaluation-only utilities.  They do not participate in
-runtime retrieval, ranking, or answerability.
-"""
 
 from __future__ import annotations
 
@@ -129,7 +124,6 @@ def ndcg_at_k(
     ),
     k: int,
 ) -> float:
-    """Normalized DCG using the linear gain definition in the challenge docs."""
 
     if isinstance(
         relevance,
@@ -311,7 +305,6 @@ def pareto_frontier(
     maximize: Sequence[str],
     minimize: Sequence[str],
 ) -> list[dict[str, Any]]:
-    """Return all non-dominated configurations."""
 
     rows = [
         dict(config)

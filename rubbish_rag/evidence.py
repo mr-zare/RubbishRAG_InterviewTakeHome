@@ -1,4 +1,3 @@
-"""Evidence construction, deduplication, and query coverage."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -88,12 +87,6 @@ _HARD_CONFLICT_VALUES = {
 def _is_citation_eligible(
     hit: dict[str, Any],
 ) -> bool:
-    """Fail closed when provenance explicitly marks a hit unusable.
-
-    Missing metadata remains backward-compatible with public/synthetic
-    contract tests. Production provenance is expected to set these flags
-    explicitly.
-    """
     if hit.get("citation_eligible") is False:
         return False
 
@@ -136,12 +129,6 @@ def assess_sufficiency(
     frame: QuerySemanticFrame,
     evidence: EvidenceSet,
 ) -> SufficiencyAssessment:
-    """Hard, deterministic evidence gate.
-
-    Ranking score is intentionally NOT treated as confidence. Sufficiency is
-    determined from provenance, requirement coverage, and semantic
-    consistency.
-    """
 
     reasons: list[str] = []
 
@@ -213,18 +200,6 @@ def assess_sufficiency(
 def _frame_for_hit(
     hit: dict[str, Any],
 ) -> QuerySemanticFrame:
-    """Build evidence semantics deterministically.
-
-    For a document ID that belongs to the trusted local corpus, semantic
-    interpretation must always come from the canonical local record.
-
-    This must not depend on whether another code path happened to warm
-    registry.document_frames earlier in the process.
-
-    Synthetic public contract tests may explicitly use
-    candidate_source="remote_unverified_test"; those continue to be
-    interpreted from their supplied payload.
-    """
 
     try:
         doc_id = int(
@@ -259,9 +234,6 @@ def _frame_for_hit(
             if cached is not None:
                 return cached
 
-            # Keep document-frame semantics identical to P8:
-            # intent is anchored in the human FAQ question, while
-            # entities/quantities may also be present in keyword/answer text.
             question_frame = parse_query(
                 record.question
             )
@@ -293,7 +265,6 @@ def _frame_for_hit(
 
             return document_frame
 
-    # Explicitly synthetic / external contract inputs use their own payload.
     text = " ".join(
         str(
             hit.get(key)
@@ -377,8 +348,6 @@ def build_evidence_set(
     coverage_cache: dict[int, set[str]] = {}
 
     while remaining and len(selected) < max_evidence:
-        # Smallest sufficient evidence set: once all requirements are covered,
-        # do not fill the remaining citation slots with redundant documents.
         if (
             selected
             and (
@@ -415,14 +384,9 @@ def build_evidence_set(
 
             adds = len(coverage - covered)
 
-            # The first candidate is primary evidence.
-            # Additional candidates must add new query requirement coverage.
             if selected and adds <= 0:
                 continue
 
-            # Provenance precedes ranking score. An untrusted/uncitable
-            # candidate must not suppress a lower-ranked trusted source merely
-            # because its retrieval score is larger.
             provenance_priority = (
                 1
                 if _is_citation_eligible(hit)

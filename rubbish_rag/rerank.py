@@ -1,4 +1,3 @@
-"""Interpretable semantic reranking and verified-corpus recall backfill (P5/P7/P8)."""
 from __future__ import annotations
 
 from collections import Counter
@@ -107,13 +106,6 @@ def _question_frame(
     record: CorpusRecord,
     registry: TrustedCorpusRegistry | None = None,
 ) -> QuerySemanticFrame:
-    """Semantic frame of the human-written FAQ question only.
-
-    Polarity matching must use this surface rather than the concatenated
-    question+answer representation. An answer often resolves or negates the
-    proposition asked by the question and must not create a false polarity
-    conflict during retrieval.
-    """
     if (
         registry is not None
         and record.source_doc_id in registry.question_frames
@@ -131,8 +123,6 @@ def _question_frame(
 def _document_frame(record: CorpusRecord, registry: TrustedCorpusRegistry | None = None) -> QuerySemanticFrame:
     if registry is not None and record.source_doc_id in registry.document_frames:
         return registry.document_frames[record.source_doc_id]
-    # Intent should be anchored in the human-written FAQ question; factual slots
-    # and quantities may also live in the answer/keywords.
     qf = parse_query(record.question)
     af = parse_query(" ".join(x for x in (record.question, record.keyword, record.brief_answer, record.answer) if x))
     af.intent = qf.intent if qf.intent is not Intent.GENERAL_INFO else af.intent
@@ -149,8 +139,6 @@ def score_record(query: str, qf: QuerySemanticFrame, record: CorpusRecord, *, pr
     score = 2.0 * prior
     contributions["retrieval_prior"] = round(2.0 * prior, 4)
 
-    # Human FAQ question is the strongest lexical surface; answer/keyword is a
-    # secondary coverage signal.
     if registry is not None and registry.records:
         _build_token_df(registry)
         qset = set(_tokens(query))
@@ -163,12 +151,6 @@ def score_record(query: str, qf: QuerySemanticFrame, record: CorpusRecord, *, pr
     score += lexical
     contributions["lexical"] = round(lexical, 4)
 
-    # FAQ-question specificity anchor.
-    #
-    # Typed semantic compatibility is necessary but does not always identify
-    # the most specific source. A normalized exact match against the
-    # human-written FAQ question is therefore treated as strong source
-    # evidence. This is content-based and independent of benchmark IDs.
     normalized_query = normalize_match_text(query)
     normalized_question = normalize_match_text(record.question)
 
@@ -247,12 +229,6 @@ def _build_token_df(registry: TrustedCorpusRegistry) -> None:
 
 
 
-# ---------------------------------------------------------------------------
-# Fast local candidate generation.
-#
-# These indexes are query-independent and are built once by prepare_reranker()
-# before the stock benchmark starts timing individual queries.
-# ---------------------------------------------------------------------------
 
 _LOCAL_INDEX_CORPUS_HASH = ""
 _LOCAL_TOKEN_POSTINGS: dict[str, set[int]] = {}
@@ -353,16 +329,6 @@ def _cheap_local_shortlist(
     *,
     limit: int = 96,
 ) -> list[int]:
-    """Generate a high-recall shortlist without running full score_record.
-
-    Candidate union:
-      - rare lexical query terms,
-      - compatible intent,
-      - explicit structured slots,
-      - exact typed quantities.
-
-    The final ranking still uses the original semantic score_record().
-    """
 
     _build_local_candidate_indexes(registry)
 
@@ -371,8 +337,6 @@ def _cheap_local_shortlist(
 
     candidate_ids: set[int] = set()
 
-    # Use the most discriminative query terms first. Very common tokens such
-    # as "امتیاز" should not expand the shortlist to the whole corpus.
     ranked_tokens = sorted(
         qtokens,
         key=lambda token: (
@@ -388,8 +352,6 @@ def _cheap_local_shortlist(
         <= max(80, int(0.40 * n_docs))
     ][:8]
 
-    # If every term is common, keep a few anyway rather than losing the
-    # lexical path altogether.
     if not lexical_terms:
         lexical_terms = ranked_tokens[:5]
 
@@ -401,7 +363,6 @@ def _cheap_local_shortlist(
             )
         )
 
-    # Intent is useful for paraphrases with weak literal overlap.
     if qf.intent is not Intent.GENERAL_INFO:
         candidate_ids.update(
             _LOCAL_INTENT_POSTINGS.get(
@@ -410,7 +371,6 @@ def _cheap_local_shortlist(
             )
         )
 
-    # Explicit slots are high-value recall anchors.
     for entity_type in (
         EntityType.BANK,
         EntityType.RANK,
@@ -438,8 +398,6 @@ def _cheap_local_shortlist(
     if not candidate_ids:
         candidate_ids.update(registry.records)
 
-    # Cheap ranking only. No parsing and no full semantic scoring here:
-    # all document frames/tokens were precomputed at startup.
     cheap: list[tuple[float, int]] = []
 
     for doc_id in candidate_ids:
@@ -493,8 +451,6 @@ def _cheap_local_shortlist(
                 df,
             )
 
-            # This stage only wants recall. Do not let a cheap prefilter apply
-            # large negative semantic penalties.
             if quantity_score > 0:
                 score += min(
                     quantity_score,
@@ -522,7 +478,6 @@ def _cheap_local_shortlist(
 
 
 def prepare_reranker() -> None:
-    """Warm trusted-corpus indexes outside per-query timing."""
     registry = get_registry()
 
     if not registry.records:
@@ -553,12 +508,6 @@ def local_verified_search(
     limit: int = 5,
     shortlist_limit: int = 96,
 ) -> list[dict[str, Any]]:
-    """Two-stage verified recall backfill.
-
-    Stage 1 uses precomputed inverted indexes to produce a cheap high-recall
-    shortlist. Stage 2 applies the unchanged full semantic scorer only to that
-    shortlist.
-    """
     if not registry.records:
         return []
 
@@ -680,12 +629,6 @@ def _verified_exact_question_hits(
     qf: QuerySemanticFrame,
     registry: TrustedCorpusRegistry,
 ) -> list[dict[str, Any]]:
-    """Return trusted FAQ records whose normalized question exactly matches.
-
-    This is a high-specificity source anchor, not a benchmark shortcut.
-    It operates only on the trusted local corpus and is independent of
-    document IDs or expected answers.
-    """
     if not registry.records:
         return []
 
@@ -760,11 +703,6 @@ def _candidate_satisfies_query_frame(
     record: CorpusRecord,
     registry: TrustedCorpusRegistry,
 ) -> bool:
-    """Whether one trusted candidate covers the critical query frame.
-
-    This is intentionally stricter than lexical relevance. It is only used to
-    decide whether the remote top-k needs a verified local recall backfill.
-    """
     df = _document_frame(record, registry)
 
     if (
@@ -811,9 +749,6 @@ def _candidate_satisfies_query_frame(
     if polarity_score < 0:
         return False
 
-    # Typed slots describe constraints but do not fully describe the user's
-    # information need. Require a modest level of overlap with the human FAQ
-    # question before treating the remote pool as complete.
     _build_token_df(registry)
 
     query_tokens = set(_tokens(query))
@@ -843,7 +778,6 @@ def _needs_verified_backfill(
     candidates: dict[int, dict[str, Any]],
     registry: TrustedCorpusRegistry,
 ) -> bool:
-    """Backfill only when no trusted remote candidate fully covers the query."""
 
     remote_verified = [
         hit
@@ -851,7 +785,6 @@ def _needs_verified_backfill(
         if hit.get("candidate_source") == "remote_verified"
     ]
 
-    # A real remote call may have yielded only untrusted/poison candidates.
     if not remote_verified:
         return True
 
@@ -885,13 +818,11 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
     for hit in fused:
         doc_id = int(hit.get("doc_id", -1))
         remote_text = str(hit.get("text") or "")
-        # Public unit tests pass synthetic hits without component scores. Preserve
-        # those as a compatibility path; real server hits have bm25/dense.
         remote_like = "bm25" in hit or "dense" in hit
         if registry.records and remote_like:
             trusted = registry.rehydrate_hit(hit)
             if trusted is None:
-                continue  # fail closed for unknown/poison source IDs
+                continue
             trusted["remote_text"] = remote_text
             trusted["candidate_source"] = "remote_verified"
             candidates[doc_id] = trusted
@@ -901,9 +832,6 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
             item.setdefault("candidate_source", "remote_unverified_test")
             candidates[doc_id] = item
 
-    # The official bench bypasses the registered @retriever and fixes remote k=5.
-    # P0 showed candidate recall failures, so a small verified-corpus backfill is
-    # used as a compatibility bridge when the trusted corpus is available.
     had_real_remote = any(
         "bm25" in hit or "dense" in hit
         for hit in fused
@@ -972,9 +900,6 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
     rescored: list[dict[str, Any]] = []
     remote_rank_by_doc = {int(h["doc_id"]): int(h.get("rrf_rank", i + 1)) for i, h in enumerate(fused)}
     for doc_id, hit in candidates.items():
-        # Synthetic/public contract tests can use doc_ids that also exist in the
-        # real corpus. They intentionally omit bm25/dense and must be scored
-        # against the supplied hit text, not silently rehydrated from corpus.
         is_synthetic = hit.get("candidate_source") == "remote_unverified_test"
         record = None if is_synthetic else (
             registry.get(doc_id) if registry.records else None
@@ -984,12 +909,10 @@ def semantic_rerank(query: str, hits: list[dict[str, Any]], *, enable_local_back
             remote_rank = remote_rank_by_doc.get(doc_id)
             remote_prior = 0.0 if remote_rank is None else 1.0 / (1.0 + 0.28 * (remote_rank - 1))
             local_raw = float(hit.get("local_retrieval_score", 0.0) or 0.0)
-            local_prior = min(max(local_raw / 6.0, 0.0), 1.0)  # bounded; feature score can exceed 1
+            local_prior = min(max(local_raw / 6.0, 0.0), 1.0)
             prior = max(remote_prior, 0.85 * local_prior)
             score, parts = score_record(query, qf, record, prior=prior, registry=registry)
         else:
-            # Compatibility mode for synthetic tests without corpus: keep the
-            # ranking prior and bounded lexical coverage from the supplied text.
             remote_rank = remote_rank_by_doc.get(doc_id, 999)
             prior = 1.0 / (1.0 + 0.28 * (remote_rank - 1)) if remote_rank < 999 else 0.0
             lexical = _weighted_coverage(query, str(hit.get("remote_text") or hit.get("text") or ""), None)

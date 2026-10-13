@@ -4,9 +4,6 @@ from rubbish_rag.judge import (
 
 
 def test_openweight_without_local_model_falls_back_cleanly():
-    # force_model=True explicitly exercises the model path.
-    # With the normal selective policy, a high-confidence heuristic
-    # decision is intentionally accepted before model loading.
     judge = OpenWeightLLMJudge(
         force_model=True,
     )

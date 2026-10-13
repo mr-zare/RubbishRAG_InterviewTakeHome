@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Final offline metric pass for the RubbishRAG glossary.
-
-No remote retrieval is performed.
-"""
 
 from __future__ import annotations
 
@@ -12,8 +8,6 @@ import platform
 import sys
 from pathlib import Path
 
-# Allow this repository script to be executed directly:
-#   python scripts/final_glossary_metrics.py
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 if str(REPO_ROOT) not in sys.path:
@@ -306,9 +300,6 @@ def build_plots(
         exist_ok=True,
     )
 
-    # --------------------------------------------------------
-    # Risk-Coverage
-    # --------------------------------------------------------
     retrieval_points = metrics[
         "risk_coverage"
     ][
@@ -382,9 +373,6 @@ def build_plots(
 
     plt.close()
 
-    # --------------------------------------------------------
-    # Pareto view
-    # --------------------------------------------------------
     if ablation:
         names = (
             "heuristic",
@@ -479,9 +467,6 @@ def main():
 
     args = parser.parse_args()
 
-    # ========================================================
-    # Prepare trusted local evaluation index
-    # ========================================================
     prepare_reranker()
 
     registry = get_registry()
@@ -490,17 +475,11 @@ def main():
         HeuristicFeatureJudge()
     )
 
-    # ========================================================
-    # Official Staff Judge metrics
-    # ========================================================
     official = evaluate_judge(
         judge=heuristic,
         split="test",
     )
 
-    # ========================================================
-    # IR metrics: stored raw remote retrieval replay
-    # ========================================================
     visible = load_cases(
         ROOT
         / "server"
@@ -576,9 +555,6 @@ def main():
             row
         )
 
-    # ========================================================
-    # IR metrics: current trusted-local ranking replay
-    # ========================================================
     local_eval = []
 
     local_rankings = {}
@@ -619,9 +595,6 @@ def main():
             )
         )
 
-    # ========================================================
-    # Risk-Coverage on official judge test split
-    # ========================================================
     judge_rows = [
         row
         for row in load_cases(
@@ -732,9 +705,6 @@ def main():
         )
     )
 
-    # ========================================================
-    # Existing OpenWeight / Hybrid ablation + p99
-    # ========================================================
     ablation_path = (
         ROOT
         / "traces"
@@ -818,7 +788,6 @@ def main():
         pareto_rows.append(
             {
                 "name": name,
-                # This ablation uses stricter three-way exact action matching.
                 "accuracy": float(
                     row[
                         "routing_accuracy"
@@ -858,9 +827,6 @@ def main():
         ],
     )
 
-    # ========================================================
-    # Actual context-token savings with local Qwen tokenizer
-    # ========================================================
     token_metric = {
         "status": (
             "skipped_no_tokenizer_model"
@@ -1038,9 +1004,6 @@ def main():
             "per_query": per_query,
         }
 
-    # ========================================================
-    # Final artifact
-    # ========================================================
     metrics = {
         "scope": {
             "network_retrieval_used": False,

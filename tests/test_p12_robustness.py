@@ -18,9 +18,6 @@ def _effect_polarities(frame):
     ]
 
 
-# ---------------------------------------------------------------------------
-# Normalization invariants
-# ---------------------------------------------------------------------------
 
 def test_p12_arabic_and_persian_character_forms_are_equivalent():
     a = normalize_match_text(
@@ -55,9 +52,6 @@ def test_p12_zwnj_and_space_variants_are_equivalent():
     assert a == b
 
 
-# ---------------------------------------------------------------------------
-# Semantic-frame invariants
-# ---------------------------------------------------------------------------
 
 def test_p12_script_variant_preserves_bank_entity():
     a = parse_query(
@@ -117,9 +111,6 @@ def test_p12_late_payment_effect_paraphrases_preserve_intent():
     assert b.intent is Intent.DEBT_EFFECT
 
 
-# ---------------------------------------------------------------------------
-# Contrastive mutations
-# ---------------------------------------------------------------------------
 
 def test_p12_effect_polarity_reversal_changes_semantics():
     positive = parse_query(
@@ -193,9 +184,6 @@ def test_p12_bank_swap_produces_reranker_conflict():
     )
 
 
-# ---------------------------------------------------------------------------
-# Exact-anchor invariants
-# ---------------------------------------------------------------------------
 
 def test_p12_exact_question_anchor_survives_digit_normalization():
     query = "امتیاز من 480 شده، چرا؟"
@@ -223,9 +211,6 @@ def test_p12_exact_question_anchor_survives_digit_normalization():
     )
 
 
-# ---------------------------------------------------------------------------
-# Determinism
-# ---------------------------------------------------------------------------
 
 def test_p12_semantic_parsing_is_deterministic():
     query = (

@@ -1,5 +1,5 @@
 import rubbish_rag as R
-import rubbish_rag.pipeline  # register stages
+import rubbish_rag.pipeline
 from rubbish_rag.chunking import chunk_documents
 from rubbish_rag.fusion import rrf_fuse_hits
 from rubbish_rag.resolution import resolve_grounded

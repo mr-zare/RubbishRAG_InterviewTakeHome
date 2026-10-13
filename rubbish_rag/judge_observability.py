@@ -1,9 +1,3 @@
-"""Observability helpers for the optional Adaptive RAG Judge.
-
-This module deliberately stays outside the authoritative production answer
-path.  It instruments the bounded adaptive controller so Staff-Track cost and
-latency claims can be measured without changing retrieval or answer semantics.
-"""
 
 from __future__ import annotations
 
@@ -138,7 +132,6 @@ def observe_adaptive_loop(
     AdaptiveLoopObservation,
     AdaptiveLoopResult,
 ]:
-    """Run one bounded adaptive decision while recording control-plane cost."""
 
     retrieval_calls = 0
 
@@ -247,7 +240,6 @@ def summarize_observations(
     *,
     fixed_top_k_baseline: int = 5,
 ) -> AdaptiveLoopSummary:
-    """Aggregate latency, retrieval budget, and routing telemetry."""
 
     if not observations:
         return AdaptiveLoopSummary(
@@ -503,7 +495,6 @@ def append_observation_jsonl(
     path: str | Path,
     observation: AdaptiveLoopObservation,
 ) -> None:
-    """Persist one Staff-track telemetry event as append-only JSONL."""
 
     output = Path(
         path

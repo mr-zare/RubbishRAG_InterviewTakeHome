@@ -1,4 +1,3 @@
-"""Rank-based hybrid fusion utilities (P6)."""
 from __future__ import annotations
 
 from typing import Any
@@ -13,7 +12,6 @@ def _rank_map(hits: list[dict[str, Any]], field: str) -> dict[int, int]:
 
 
 def rrf_fuse_hits(hits: list[dict[str, Any]], *, rank_constant: int = 60) -> list[dict[str, Any]]:
-    """Fuse BM25 and dense rankings without mixing incompatible raw scales."""
     if not hits:
         return []
     bm25_ranks = _rank_map(hits, "bm25")

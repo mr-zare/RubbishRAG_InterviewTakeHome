@@ -1,8 +1,3 @@
-"""Shared typed domain models for RubbishRAG.
-
-The public decorator API continues to use dictionaries for compatibility with the
-challenge. Internally, these dataclasses give us stable contracts across P1-P12.
-"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field

@@ -1,8 +1,3 @@
-"""Typed configuration primitives for RubbishRAG.
-
-Only stable architecture-level defaults live here. Values that require empirical
-ablation (for example reranker weights) will be added in later phases.
-"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

@@ -25,9 +25,6 @@ def _usable_record():
     )
 
 
-# ---------------------------------------------------------------------------
-# Unknown / forged provenance
-# ---------------------------------------------------------------------------
 
 def test_f_unknown_remote_id_cannot_become_citation():
     reranker = _production_reranker()
@@ -48,7 +45,6 @@ def test_f_unknown_remote_id_cannot_become_citation():
         "dense": 1.0,
         "fused": 999999.0,
 
-        # An external payload must not be able to self-assert trust.
         "trusted": True,
         "citation_eligible": True,
     }
@@ -119,9 +115,6 @@ def test_f_keyword_stuffed_unknown_id_cannot_launder_citation():
     )
 
 
-# ---------------------------------------------------------------------------
-# Valid ID + tampered remote payload
-# ---------------------------------------------------------------------------
 
 def test_f_valid_id_remote_payload_is_rehydrated_from_local_corpus():
     reranker = _production_reranker()
@@ -174,9 +167,6 @@ def test_f_valid_id_remote_payload_is_rehydrated_from_local_corpus():
     )
 
 
-# ---------------------------------------------------------------------------
-# Duplicate / score inflation
-# ---------------------------------------------------------------------------
 
 def test_f_duplicate_remote_hits_do_not_duplicate_candidate_identity():
     reranker = _production_reranker()
@@ -222,9 +212,6 @@ def test_f_duplicate_remote_hits_do_not_duplicate_candidate_identity():
     )
 
 
-# ---------------------------------------------------------------------------
-# Conflict injection
-# ---------------------------------------------------------------------------
 
 def test_f_high_score_conflict_cannot_suppress_clean_trusted_evidence():
     conflict = {

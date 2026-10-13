@@ -1,8 +1,3 @@
-"""Typed Persian query understanding for the credit-scoring domain.
-
-`extract_slots()` preserves the original dictionary API. `parse_query()` is the
-new typed semantic-frame entry point used by later pipeline phases.
-"""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -27,7 +22,6 @@ from .models import (
 from .normalize_fa import normalize_match_text, normalize_text
 
 
-# Public compatibility constants.
 BANKS = [
     "ملی", "صادرات", "تجارت", "توسعه صادرات", "ملت", "سپه",
     "پاسارگاد", "دیجی پی", "دیجی‌پی", "اسنپ پی", "اسنپ‌پی", "تارا",
@@ -130,8 +124,6 @@ def _find_alias_mentions(
                     end=match.end(),
                     match_type="alias",
                 ))
-    # Longest/specific non-overlapping spans win. This prevents "صادرات" from
-    # stealing "توسعه صادرات".
     candidates.sort(key=lambda m: (-(m.end - m.start), m.start, m.canonical_id))
     selected: list[EntityMention] = []
     for cand in candidates:
@@ -145,7 +137,6 @@ def _filter_bank_mentions(
     text: str,
     mentions: list[EntityMention],
 ) -> list[EntityMention]:
-    """Remove contextually obvious non-bank uses of ambiguous bank aliases."""
 
     export_cues = (
         "واردات",
@@ -162,9 +153,6 @@ def _filter_bank_mentions(
     for mention in mentions:
         raw = normalize_match_text(mention.raw_text)
 
-        # "صادرات" may mean Bank Saderat or the economic activity.
-        # Suppress only when context clearly describes export/import and
-        # there is no explicit bank cue nearby.
         if mention.canonical_id == "BANK_SADERAT" and raw == "صادرات":
             window = text[
                 max(0, mention.start - 24):
@@ -239,7 +227,6 @@ def _parse_quantities(text: str) -> list[Quantity]:
     out: list[Quantity] = []
     occupied: list[tuple[int, int]] = []
 
-    # Explicit numeric ranges first.
     for m in re.finditer(r"\b(\d+(?:[.,]\d+)?)\s*(?:تا|الی|-)\s*(\d+(?:[.,]\d+)?)\b", text):
         v1 = float(m.group(1).replace(",", ""))
         v2 = float(m.group(2).replace(",", ""))
@@ -298,12 +285,6 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
     if any(q.quantity_type is QuantityType.CREDIT_SCORE for q in quantities) and any(w in text for w in ("چرا", "علت", "افت", "کم", "پایین", "شدم", "شده")):
         return Intent.EXPLAIN_SCORE
     if debts:
-        # Intent must follow the user's information need, not merely the
-        # presence of words such as "پرداخت".
-        #
-        # Examples:
-        #   "با تاخیر پرداخت کردم؛ آیا تاخیر اثر دارد؟" -> DEBT_EFFECT
-        #   "بدهی را پرداخت کنم چه اتفاقی می افتد؟"     -> DEBT_REMOVAL
 
         has_effect_focus = any(
             cue in text
@@ -347,8 +328,6 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
             )
         )
 
-        # Explicit effect questions take precedence over incidental payment
-        # words. This prevents "paid late" from becoming a removal intent.
         if has_effect_focus:
             return Intent.DEBT_EFFECT
 
@@ -371,14 +350,9 @@ def _intent(text: str, ranks: list[EntityMention], debts: list[EntityMention], q
             )
         ):
             return Intent.DEBT_EFFECT
-    # Generic debt mentions are intentionally routed to a debt intent so the
-    # ambiguity gate can ask for the missing subtype instead of guessing.
     if "بدهی" in text and not debts:
         return Intent.DEBT_EFFECT
 
-    # A score-explanation question does not need to contain a literal numeric
-    # score. Examples include "چرا امتیاز ندارم؟" or "چرا بالاترین رتبه را
-    # ندارم؟". Keep explicit factor/effect questions out of this branch.
     causal_score_question = (
         any(term in text for term in ("امتیاز", "رتبه", "نمره"))
         and any(cue in text for cue in ("چرا", "علت", "دلیل"))
@@ -440,37 +414,27 @@ _EXISTENCE_POSITIVE_CUES = (
 def _split_surface_clauses(
     surface_text: str,
 ) -> list[str]:
-    """Split before match normalization can discard punctuation.
-
-    Besides explicit sentence separators, split before a new interrogative
-    clause such as "... دارم، آیا ...".
-    """
 
     marked = surface_text
 
-    # Preserve the punctuation inside the preceding clause so question marks
-    # remain available to modality detection.
     marked = re.sub(
         r"([؛;.!?؟]+)",
         r"\1\n",
         marked,
     )
 
-    # Contrast markers define a new semantic scope.
     marked = re.sub(
         r"\b(?:ولی|اما)\b",
         "\n",
         marked,
     )
 
-    # Persian prose frequently uses a comma before "آیا".
     marked = re.sub(
         r"[,،]\s*(?=(?:آیا|چرا|چطور|چگونه)\b)",
         "\n",
         marked,
     )
 
-    # Also support questions without punctuation.
     marked = re.sub(
         r"\s+(?=(?:آیا|چرا|چطور|چگونه)\b)",
         "\n",
@@ -553,14 +517,6 @@ def _span_distance(
 def _effect_expression_spans(
     text: str,
 ) -> list[tuple[int, int]]:
-    """Locate effect predicates so their verbs are not reused as entity
-    existence cues.
-
-    Example:
-        "بدهی مالیاتی تاثیر ندارد"
-
-    Here "ندارد" negates EFFECT, not existence of the tax debt.
-    """
     spans: list[tuple[int, int]] = []
 
     for effect_cue in _EFFECT_CUES:
@@ -590,29 +546,22 @@ def _existence_cue_belongs_to_effect(
     cue_start: int,
     cue_end: int,
 ) -> bool:
-    """Return True when دارد/ندارد is governed by an effect expression."""
 
     for effect_start, effect_end in (
         _effect_expression_spans(text)
     ):
-        # Direct overlap: effect cue itself may contain "دارد".
         if (
             cue_start < effect_end
             and cue_end > effect_start
         ):
             return True
 
-        # Common Persian predicate:
-        #     تاثیر + دارد/ندارد
-        #     اثر + دارد/ندارد
-        #     موثر + است/نیست
         if (
             effect_end <= cue_start
             and cue_start - effect_end <= 24
         ):
             return True
 
-        # Some configured effect cues may cover a longer expression.
         if (
             effect_start <= cue_start
             and cue_start - effect_start <= 40
@@ -628,11 +577,6 @@ def _debt_polarity(
     *,
     interrogative: bool,
 ) -> tuple[Polarity, str | None]:
-    """Resolve existence polarity around this debt mention only.
-
-    Event negation such as "پرداخت نشده" must not imply that the debt itself
-    does not exist.
-    """
 
     terms = tuple(
         dict.fromkeys(
@@ -742,7 +686,6 @@ def _debt_polarity(
             ),
         )
 
-        # Do not attach an existence cue from a distant proposition.
         if distance <= 28:
             return polarity, cue
 
@@ -761,7 +704,6 @@ def _effect_polarity(
     *,
     interrogative: bool,
 ) -> tuple[Polarity, str | None]:
-    """Scope effect negation locally around effect expressions."""
 
     effect_spans: list[
         tuple[int, int]
@@ -795,8 +737,6 @@ def _effect_polarity(
         )
 
     for effect_start, effect_end in effect_spans:
-        # Negation of an EFFECT usually occurs immediately around/after the
-        # effect phrase: "تاثیر ندارد", "موثر نیست", "اثر نمی گذارد".
         window = clause[
             max(0, effect_start - 6):
             min(
@@ -826,18 +766,6 @@ def _propositions(
     surface_text: str,
     debts: list[EntityMention],
 ) -> list[Proposition]:
-    """Extract clause- and target-scoped propositions.
-
-    Important distinction:
-      "بدهی مالیاتی ندارم؛ آیا چک اثر دارد؟"
-
-    becomes:
-      DEBT:مالیاتی -> NEGATIVE
-      DEBT:چک      -> UNKNOWN
-      EFFECT       -> UNKNOWN
-
-    rather than spreading one polarity/modality across the whole query.
-    """
 
     result: list[Proposition] = []
 
@@ -916,8 +844,6 @@ def _ambiguity(intent: Intent, text: str, debts: list[EntityMention], ranks: lis
     missing: list[str] = []
     conflicts: list[str] = []
 
-    # Only decision-critical missing slots trigger clarification. Avoid asking for
-    # irrelevant information merely because a slot is absent.
     if intent in (Intent.DEBT_EFFECT, Intent.DEBT_REMOVAL) and not debts and "بدهی" in text:
         missing.append("debt_type")
     if intent is Intent.DEFINE_RANK and not ranks:
@@ -975,7 +901,6 @@ def parse_query(query: str | None) -> QuerySemanticFrame:
 
 
 def extract_slots(query: str) -> dict[str, Any]:
-    """Backward-compatible slot dictionary derived from the typed frame."""
     frame = parse_query(query)
     bank_values = frame.values(EntityType.BANK)
     rank_values = frame.values(EntityType.RANK)
@@ -1005,6 +930,5 @@ def extract_slots(query: str) -> dict[str, Any]:
 
 
 def extract_slots_broken(query: str) -> dict:
-    """Starter compatibility shim; retained only for imports in untouched code."""
     return {"BANK": None, "RANK": None, "PERSONA": None, "DEBT": None,
             "AMOUNT": None, "TIME": None}

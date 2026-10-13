@@ -12,9 +12,6 @@ def _polarities(frame, concept):
     ]
 
 
-# ---------------------------------------------------------------------------
-# Declarative / interrogative distinction
-# ---------------------------------------------------------------------------
 
 def test_g_positive_declarative_effect():
     frame = parse_query(
@@ -60,9 +57,6 @@ def test_g_explicit_negative_question_remains_negative():
     )
 
 
-# ---------------------------------------------------------------------------
-# Clause-scoped modality
-# ---------------------------------------------------------------------------
 
 def test_g_positive_premise_is_not_erased_by_following_question():
     frame = parse_query(
@@ -134,9 +128,6 @@ def test_g_contrastive_debt_negation_remains_scoped():
     )
 
 
-# ---------------------------------------------------------------------------
-# Event negation must not negate entity existence
-# ---------------------------------------------------------------------------
 
 def test_g_unpaid_debt_still_means_debt_exists():
     frame = parse_query(
@@ -152,9 +143,6 @@ def test_g_unpaid_debt_still_means_debt_exists():
     )
 
 
-# ---------------------------------------------------------------------------
-# Contrastive reranker behavior
-# ---------------------------------------------------------------------------
 
 def test_g_positive_vs_negative_effect_is_conflict():
     query = (
@@ -252,9 +240,6 @@ def test_g_open_question_does_not_fake_polarity_conflict():
     )
 
 
-# ---------------------------------------------------------------------------
-# Answer polarity must not contaminate question polarity
-# ---------------------------------------------------------------------------
 
 def test_g_answer_negation_cannot_create_question_conflict():
     query = (

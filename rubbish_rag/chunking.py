@@ -1,4 +1,3 @@
-"""Sentence-aware parent/child chunking (P4)."""
 from __future__ import annotations
 
 import re
@@ -32,7 +31,6 @@ def _hard_split(text: str, hard_max: int) -> list[str]:
             out.append(cur)
         return [p for piece in out for p in _hard_split(piece, hard_max) if p]
 
-    # Last resort: word-boundary chunks. Never cut through a token/number-unit pair.
     words = text.split()
     out, cur = [], []
     n = 0
@@ -84,7 +82,6 @@ def chunk_record(doc: dict[str, Any], *, soft_target: int = 420, hard_max: int =
             start = cursor
         end = start + len(part)
         cursor = end
-        # Keep source text pristine. Contextual views are separate fields.
         lexical_view = " ".join(x for x in (question, keyword, part) if x)
         semantic_view = " ".join(x for x in (category, question, doc.get("BriefAnswer") or "", part) if x)
         chunks.append({
